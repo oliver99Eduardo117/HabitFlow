@@ -1,0 +1,7 @@
+{
+  "name": "HabitFlow",
+  "description": "Gestor de tareas y hábitos diarios con tracking visual, cuadrícula de calor GitHub, cronómetro, gamificación y análisis inteligente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
