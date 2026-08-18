@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -493,12 +495,12 @@ fun HabitDetailDialog(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            val totalGridWidth = (dateMatrix.size * 17).dp
+                            val totalGridWidth = (dateMatrix.size * 18).dp
 
                             // Consistency Grid Container (Fixed Day Column + Scrollable Month & Week Columns)
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -510,23 +512,25 @@ fun HabitDetailDialog(
                                 ) {
                                     // STICKY / FIXED LEFT COLUMN: Day Labels (L, M, X, J, V, S, D)
                                     Column(
-                                        modifier = Modifier.width(20.dp),
+                                        modifier = Modifier.width(24.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        // Month Header spacer
-                                        Spacer(modifier = Modifier.height(20.dp))
+                                        // Month Header spacer to align with grid rows
+                                        Spacer(modifier = Modifier.height(22.dp))
 
                                         val dayLabels = listOf("L", "M", "X", "J", "V", "S", "D")
                                         dayLabels.forEach { label ->
                                             Box(
-                                                modifier = Modifier.size(width = 20.dp, height = 13.dp),
+                                                modifier = Modifier.size(width = 24.dp, height = 15.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
                                                     text = label,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
+                                                    fontFamily = FontFamily.SansSerif,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    textAlign = TextAlign.Center
                                                 )
                                             }
                                             Spacer(modifier = Modifier.height(3.dp))
@@ -536,9 +540,9 @@ fun HabitDetailDialog(
                                     // Divider between day column and scrollable heatmap matrix
                                     Box(
                                         modifier = Modifier
-                                            .padding(horizontal = 5.dp)
+                                            .padding(horizontal = 6.dp)
                                             .width(1.dp)
-                                            .height((20 + 7 * 13 + 6 * 3).dp)
+                                            .height((22 + 7 * 15 + 6 * 3).dp)
                                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                                     )
 
@@ -552,13 +556,14 @@ fun HabitDetailDialog(
                                         Box(
                                             modifier = Modifier
                                                 .width(totalGridWidth)
-                                                .height(20.dp)
+                                                .height(22.dp)
                                         ) {
                                             monthPositions.forEach { item ->
-                                                val xOffset = (item.weekIndex * 17).dp
+                                                val xOffset = (item.weekIndex * 18).dp
                                                 Text(
                                                     text = item.monthName,
-                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.SansSerif,
+                                                    fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     maxLines = 1,
@@ -582,13 +587,13 @@ fun HabitDetailDialog(
 
                                                         Box(
                                                             modifier = Modifier
-                                                                .size(13.dp)
-                                                                .clip(RoundedCornerShape(3.dp))
+                                                                .size(15.dp)
+                                                                .clip(RoundedCornerShape(3.5.dp))
                                                                 .background(cellColor)
                                                                 .border(
                                                                     width = if (isSelected) 1.5.dp else 0.5.dp,
                                                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.1f),
-                                                                    shape = RoundedCornerShape(3.dp)
+                                                                    shape = RoundedCornerShape(3.5.dp)
                                                                 )
                                                                 .clickable { selectedDayStr = dateStr }
                                                         )
@@ -751,16 +756,16 @@ fun HabitDetailDialog(
                             onClick = onToggleTodayCompletion,
                             shape = RoundedCornerShape(12.dp),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (isCompletedToday) Color(0xFF10B981) else habitColor,
-                                contentColor = Color.White
+                                containerColor = if (isCompletedToday) habitColor else habitColor.copy(alpha = 0.18f),
+                                contentColor = if (isCompletedToday) Color.White else habitColor
                             ),
                             modifier = Modifier
                                 .size(42.dp)
                                 .testTag("detail_toggle_today_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = if (isCompletedToday) "Completado" else "Marcar completado hoy",
+                                imageVector = if (isCompletedToday) Icons.Default.Check else Icons.Default.CheckCircleOutline,
+                                contentDescription = if (isCompletedToday) "Completado hoy" else "Marcar completado hoy",
                                 modifier = Modifier.size(22.dp)
                             )
                         }

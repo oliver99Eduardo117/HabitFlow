@@ -69,6 +69,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     )
     val uiState: StateFlow<HabitUiState> = _uiState.asStateFlow()
 
+    private val _xpGainedEvent = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val xpGainedEvent: SharedFlow<Int> = _xpGainedEvent.asSharedFlow()
+
     val themeMode: StateFlow<ThemeMode> = themePrefs.themeMode
     val dynamicColor: StateFlow<Boolean> = themePrefs.dynamicColor
 
@@ -261,26 +264,40 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleHabitCompletion(habitId: Long, date: String = _uiState.value.selectedDate) {
         viewModelScope.launch {
-            val wasCompleted = repository.toggleHabitCompletion(habitId, date)
-            val message = if (wasCompleted) "¡Hábito completado! +25 XP 🔥" else "Hábito desmarcado"
+            val gainedXp = repository.toggleHabitCompletion(habitId, date)
+            val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP 🔥" else "Hábito desmarcado"
             _uiState.update { it.copy(snackbarMessage = message) }
+            if (gainedXp > 0) {
+                _xpGainedEvent.tryEmit(gainedXp)
+            }
             triggerHaptic()
         }
     }
 
     fun recordQuantitativeProgress(habitId: Long, value: Float, notes: String = "") {
         viewModelScope.launch {
-            repository.recordHabitProgress(habitId, _uiState.value.selectedDate, value, notes)
-            val habit = _uiState.value.habits.find { it.habit.id == habitId }
-            val bonusText = if (habit != null && value > habit.habit.targetValue) " ¡Meta superada! 🚀 +40 XP" else " +25 XP"
-            _uiState.update { it.copy(snackbarMessage = "Progreso registrado:$bonusText") }
+            val gainedXp = repository.recordHabitProgress(habitId, _uiState.value.selectedDate, value, notes)
+            val bonusText = if (gainedXp > 0) " +$gainedXp XP" else ""
+            _uiState.update { it.copy(snackbarMessage = "Progreso registrado$bonusText") }
+            if (gainedXp > 0) {
+                _xpGainedEvent.tryEmit(gainedXp)
+            }
             triggerHaptic()
         }
     }
 
     fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) {
         viewModelScope.launch {
-            repository.toggleSubTask(subTaskId, isCompleted)
+            val gainedXp = repository.toggleSubTask(subTaskId, isCompleted)
+            if (gainedXp > 0) {
+                _xpGainedEvent.tryEmit(gainedXp)
+            }
+        }
+    }
+
+    fun emitXpGained(amount: Int) {
+        if (amount > 0) {
+            _xpGainedEvent.tryEmit(amount)
         }
     }
 

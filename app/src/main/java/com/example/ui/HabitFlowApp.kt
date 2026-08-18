@@ -66,23 +66,19 @@ fun HabitFlowApp(
     var showThemeSwitcherDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
 
-    // Transient XP Gain Notification Banner (shows temporarily when XP is earned)
-    var lastKnownXp by remember { mutableStateOf<Int?>(null) }
+    // Transient XP Gain Notification Banner (shows temporarily ONLY when XP is actively earned)
     var recentGainedXp by remember { mutableStateOf(0) }
     var showXpNotificationBanner by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.userStats.xp) {
-        val currentXp = uiState.userStats.xp
-        val prev = lastKnownXp
-        if (prev != null && currentXp > prev) {
-            recentGainedXp = currentXp - prev
-            showXpNotificationBanner = true
-            kotlinx.coroutines.delay(3800)
-            showXpNotificationBanner = false
-        } else if (prev != null && currentXp < prev) {
-            showXpNotificationBanner = false
+    LaunchedEffect(Unit) {
+        viewModel.xpGainedEvent.collect { gained ->
+            if (gained > 0) {
+                recentGainedXp = gained
+                showXpNotificationBanner = true
+                kotlinx.coroutines.delay(3500)
+                showXpNotificationBanner = false
+            }
         }
-        lastKnownXp = currentXp
     }
 
     // Handle Snackbar messages

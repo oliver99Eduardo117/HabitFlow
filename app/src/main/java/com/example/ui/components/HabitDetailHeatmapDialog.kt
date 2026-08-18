@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -199,7 +201,7 @@ fun HabitDetailHeatmapDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                val totalGridWidth = (dateMatrix.size * 17).dp
+                val totalGridWidth = (dateMatrix.size * 18).dp
 
                 // Heatmap Container (Fixed Left Day Column + Horizontally Scrollable Grid)
                 Surface(
@@ -211,28 +213,30 @@ fun HabitDetailHeatmapDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 12.dp),
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.Top
                     ) {
                         // STICKY / FIXED LEFT COLUMN: Day Labels (L, M, X, J, V, S, D)
                         Column(
-                            modifier = Modifier.width(22.dp),
+                            modifier = Modifier.width(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // Month Header spacer
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(22.dp))
 
                             val dayLabels = listOf("L", "M", "X", "J", "V", "S", "D")
                             dayLabels.forEach { label ->
                                 Box(
-                                    modifier = Modifier.size(width = 22.dp, height = 14.dp),
+                                    modifier = Modifier.size(width = 24.dp, height = 15.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = label,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(3.dp))
@@ -244,7 +248,7 @@ fun HabitDetailHeatmapDialog(
                             modifier = Modifier
                                 .padding(horizontal = 6.dp)
                                 .width(1.dp)
-                                .height((20 + 7 * 14 + 6 * 3).dp)
+                                .height((22 + 7 * 15 + 6 * 3).dp)
                                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                         )
 
@@ -258,12 +262,13 @@ fun HabitDetailHeatmapDialog(
                             Box(
                                 modifier = Modifier
                                     .width(totalGridWidth)
-                                    .height(20.dp)
+                                    .height(22.dp)
                             ) {
                                 monthPositions.forEach { item ->
-                                    val xOffset = (item.weekIndex * 17).dp
+                                    val xOffset = (item.weekIndex * 18).dp
                                     Text(
                                         text = item.monthName,
+                                        fontFamily = FontFamily.SansSerif,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -417,13 +422,13 @@ private fun SingleHabitHeatmapCell(
 
     Box(
         modifier = Modifier
-            .size(14.dp)
-            .clip(RoundedCornerShape(3.dp))
+            .size(15.dp)
+            .clip(RoundedCornerShape(3.5.dp))
             .background(cellColor)
             .border(
                 width = if (isSelected) 1.6.dp else 0.5.dp,
                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(3.dp)
+                shape = RoundedCornerShape(3.5.dp)
             )
             .clickable { onClick() }
     )

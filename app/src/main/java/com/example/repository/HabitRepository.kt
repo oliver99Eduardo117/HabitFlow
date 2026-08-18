@@ -122,12 +122,13 @@ class HabitRepository(
         date: String,
         value: Float,
         notes: String = ""
-    ) = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.IO) {
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val habit = habitDao.getHabitById(habitId)
         val target = habit?.targetValue ?: 1f
         val wasCompleted = existingLog != null && existingLog.value >= target
         val isNowCompleted = value >= target
+        var earnedXp = 0
 
         if (value <= 0f) {
             habitLogDao.deleteLog(habitId, date)
@@ -140,21 +141,22 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
 
             if (!wasCompleted && isNowCompleted) {
-                awardXpForCompletion(habit, value)
+                earnedXp = awardXpForCompletion(habit, value)
             } else if (wasCompleted && !isNowCompleted) {
                 deductXpForCompletion(habit, existingLog?.value ?: target)
             }
         }
+        earnedXp
     }
 
-    suspend fun toggleHabitCompletion(habitId: Long, date: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun toggleHabitCompletion(habitId: Long, date: String): Int = withContext(Dispatchers.IO) {
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
-        val habit = habitDao.getHabitById(habitId) ?: return@withContext false
+        val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
 
         if (existingLog != null && existingLog.value >= habit.targetValue) {
             habitLogDao.deleteLog(habitId, date)
             deductXpForCompletion(habit, existingLog.value)
-            false
+            0
         } else {
             val log = HabitLog(
                 habitId = habitId,
@@ -164,25 +166,26 @@ class HabitRepository(
             )
             habitLogDao.insertOrUpdateLog(log)
             awardXpForCompletion(habit, habit.targetValue)
-            true
         }
     }
 
-    suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean): Int = withContext(Dispatchers.IO) {
         subTaskDao.setSubTaskCompleted(subTaskId, isCompleted)
         if (isCompleted) {
             awardXpForSubTask()
         } else {
             deductXpForSubTask()
+            0
         }
     }
 
-    private suspend fun awardXpForSubTask() {
+    private suspend fun awardXpForSubTask(): Int {
         val currentStats = userStatsDao.getUserStats() ?: UserStats()
         val bonus = if (currentStats.isHardcoreMode) (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else GamificationConfig.XP_SUBTASK_COMPLETION
         val newXp = currentStats.xp + bonus
         val newLevel = GamificationConfig.calculateLevel(newXp)
         checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+        return bonus
     }
 
     private suspend fun deductXpForSubTask() {
@@ -237,7 +240,7 @@ class HabitRepository(
         habitDao.getHabitsCountByCategory(categoryName)
     }
 
-    private suspend fun awardXpForCompletion(habit: Habit?, completedValue: Float) {
+    private suspend fun awardXpForCompletion(habit: Habit?, completedValue: Float): Int {
         val currentStats = userStatsDao.getUserStats() ?: UserStats()
         var baseHabitXp = GamificationConfig.XP_HABIT_COMPLETION
         if (habit != null && completedValue > habit.targetValue) {
@@ -267,6 +270,7 @@ class HabitRepository(
             lastActiveDate = DateUtils.getTodayDateString()
         )
         checkAndSaveGamification(updated)
+        return earnedXp
     }
 
     private suspend fun deductXpForCompletion(habit: Habit?, previousValue: Float) {
