@@ -1,6 +1,7 @@
 package com.example.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.model.GamificationConfig
 import com.example.model.Habit
 import com.example.model.HabitWithStats
 import com.example.model.ThemeMode
@@ -58,8 +60,30 @@ fun HabitFlowApp(
     var showTemplatePicker by remember { mutableStateOf(false) }
     var showSearchField by remember { mutableStateOf(false) }
     var showCreateCategoryDialogMain by remember { mutableStateOf(false) }
+    var showManageCategoriesDialog by remember { mutableStateOf(false) }
+    var showArchivedHabitsDialog by remember { mutableStateOf(false) }
+    var selectedDetailHabit by remember { mutableStateOf<HabitWithStats?>(null) }
     var showThemeSwitcherDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
+
+    // Transient XP Gain Notification Banner (shows temporarily when XP is earned)
+    var lastKnownXp by remember { mutableStateOf<Int?>(null) }
+    var recentGainedXp by remember { mutableStateOf(0) }
+    var showXpNotificationBanner by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.userStats.xp) {
+        val currentXp = uiState.userStats.xp
+        val prev = lastKnownXp
+        if (prev != null && currentXp > prev) {
+            recentGainedXp = currentXp - prev
+            showXpNotificationBanner = true
+            kotlinx.coroutines.delay(3800)
+            showXpNotificationBanner = false
+        } else if (prev != null && currentXp < prev) {
+            showXpNotificationBanner = false
+        }
+        lastKnownXp = currentXp
+    }
 
     // Handle Snackbar messages
     LaunchedEffect(uiState.snackbarMessage) {
@@ -100,6 +124,9 @@ fun HabitFlowApp(
                 onToggleDynamicColor = { enabled -> viewModel.setDynamicColor(enabled) },
                 onOpenThemeDialog = { showThemeSwitcherDialog = true },
                 onOpenTemplates = { showTemplatePicker = true },
+                onOpenManageCategories = { showManageCategoriesDialog = true },
+                onOpenArchivedHabits = { showArchivedHabitsDialog = true },
+                archivedHabitsCount = uiState.archivedHabits.size,
                 onExportJson = { viewModel.getExportJson() },
                 onExportCsv = { viewModel.getExportCsv() },
                 onRescheduleReminders = { viewModel.rescheduleAllReminders() },
@@ -209,7 +236,12 @@ fun HabitFlowApp(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                 ) {
-                                    Text(text = "⭐", fontSize = 11.sp)
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(13.dp)
+                                    )
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "Lv.${uiState.userStats.level}",
@@ -428,6 +460,37 @@ fun HabitFlowApp(
                                 )
                             }
                         )
+
+                        // Manage Categories Chip
+                        AssistChip(
+                            onClick = { showManageCategoriesDialog = true },
+                            label = { Text("Gestionar", fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Gestionar Categorías",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        )
+
+                        // Archived Habits Chip
+                        if (uiState.archivedHabits.isNotEmpty()) {
+                            AssistChip(
+                                onClick = { showArchivedHabitsDialog = true },
+                                label = { Text("Archivados (${uiState.archivedHabits.size})", fontWeight = FontWeight.SemiBold) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Archive,
+                                        contentDescription = "Hábitos Archivados",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                },
+                                modifier = Modifier.testTag("archived_habits_chip")
+                            )
+                        }
                     }
                 }
             }
@@ -494,83 +557,112 @@ fun HabitFlowApp(
         ) {
             when (uiState.activeTab) {
                 NavigationTab.TODAY -> {
-                    if (filteredHabits.isEmpty()) {
-                        EmptyHabitsState(
-                            onAddHabit = {
-                                editingHabit = null
-                                showAddEditDialog = true
-                            },
-                            onPickTemplate = { showTemplatePicker = true }
-                        )
-                    } else {
-                        when (uiState.layoutMode) {
-                            ViewLayoutMode.LIST -> {
-                                LazyColumn(
-                                    contentPadding = PaddingValues(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    items(filteredHabits, key = { it.habit.id }) { habitStat ->
-                                        HabitTileCard(
-                                            habitWithStats = habitStat,
-                                            isGridView = false,
-                                            onToggleCompletion = { viewModel.toggleHabitCompletion(habitStat.habit.id) },
-                                            onOpenProgressDialog = { quantitativeHabitTarget = habitStat },
-                                            onStartTimer = { pomodoroHabitTarget = habitStat },
-                                            onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Floating Animated XP Gain Banner (only appears when gaining XP)
+                        AnimatedVisibility(
+                            visible = showXpNotificationBanner,
+                            enter = fadeIn(androidx.compose.animation.core.tween(250)) + expandVertically(androidx.compose.animation.core.tween(300)) + slideInVertically(androidx.compose.animation.core.tween(300)),
+                            exit = fadeOut(androidx.compose.animation.core.tween(250)) + shrinkVertically(androidx.compose.animation.core.tween(300)) + slideOutVertically(androidx.compose.animation.core.tween(300))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+                            ) {
+                                GamificationXpToastBanner(
+                                    userStats = uiState.userStats,
+                                    gainedXp = recentGainedXp,
+                                    onOpenGamification = {
+                                        showXpNotificationBanner = false
+                                        viewModel.setNavigationTab(NavigationTab.GAMIFICATION)
+                                    },
+                                    onDismiss = { showXpNotificationBanner = false }
+                                )
+                            }
+                        }
+
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            if (filteredHabits.isEmpty()) {
+                                EmptyHabitsState(
+                                    onAddHabit = {
+                                        editingHabit = null
+                                        showAddEditDialog = true
+                                    },
+                                    onPickTemplate = { showTemplatePicker = true }
+                                )
+                            } else {
+                                when (uiState.layoutMode) {
+                                    ViewLayoutMode.LIST -> {
+                                        LazyColumn(
+                                            contentPadding = PaddingValues(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            items(filteredHabits, key = { it.habit.id }) { habitStat ->
+                                                HabitTileCard(
+                                                    habitWithStats = habitStat,
+                                                    isGridView = false,
+                                                    onToggleCompletion = { viewModel.toggleHabitCompletion(habitStat.habit.id) },
+                                                    onOpenProgressDialog = { quantitativeHabitTarget = habitStat },
+                                                    onStartTimer = { pomodoroHabitTarget = habitStat },
+                                                    onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
+                                                    onEditHabit = {
+                                                        editingHabit = habitStat.habit
+                                                        showAddEditDialog = true
+                                                    },
+                                                    onArchiveHabit = { viewModel.setArchived(habitStat.habit.id, true) },
+                                                    onViewDetail = { selectedDetailHabit = habitStat },
+                                                    onDeleteHabit = { viewModel.deleteHabit(habitStat.habit.id) },
+                                                    onTestReminder = { viewModel.testHabitReminder(habitStat.habit) }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    ViewLayoutMode.HEATMAP -> {
+                                        HabitsHeatmapLayout(
+                                            habits = filteredHabits,
+                                            allLogs = uiState.allLogs,
+                                            onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
+                                            onOpenProgressDialog = { quantitativeHabitTarget = it },
+                                            onToggleDateCompletion = { habitId, dateStr ->
+                                                viewModel.toggleHabitCompletion(habitId, dateStr)
+                                            },
                                             onEditHabit = {
-                                                editingHabit = habitStat.habit
+                                                editingHabit = it.habit
+                                                showAddEditDialog = true
+                                            }
+                                        )
+                                    }
+
+                                    ViewLayoutMode.KANBAN -> {
+                                        KanbanView(
+                                            habits = filteredHabits,
+                                            onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
+                                            onOpenProgressDialog = { quantitativeHabitTarget = it },
+                                            onStartTimer = { pomodoroHabitTarget = it },
+                                            onEditHabit = {
+                                                editingHabit = it.habit
                                                 showAddEditDialog = true
                                             },
-                                            onArchiveHabit = { viewModel.setArchived(habitStat.habit.id, true) },
-                                            onTestReminder = { viewModel.testHabitReminder(habitStat.habit) }
+                                            onArchiveHabit = { viewModel.setArchived(it, true) }
+                                        )
+                                    }
+
+                                    ViewLayoutMode.TIMELINE -> {
+                                        TimelineView(
+                                            habits = filteredHabits,
+                                            onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
+                                            onOpenProgressDialog = { quantitativeHabitTarget = it },
+                                            onStartTimer = { pomodoroHabitTarget = it },
+                                            onEditHabit = {
+                                                editingHabit = it.habit
+                                                showAddEditDialog = true
+                                            },
+                                            onArchiveHabit = { viewModel.setArchived(it, true) }
                                         )
                                     }
                                 }
-                            }
-
-                            ViewLayoutMode.HEATMAP -> {
-                                HabitsHeatmapLayout(
-                                    habits = filteredHabits,
-                                    allLogs = uiState.allLogs,
-                                    onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
-                                    onOpenProgressDialog = { quantitativeHabitTarget = it },
-                                    onToggleDateCompletion = { habitId, dateStr ->
-                                        viewModel.toggleHabitCompletion(habitId, dateStr)
-                                    },
-                                    onEditHabit = {
-                                        editingHabit = it.habit
-                                        showAddEditDialog = true
-                                    }
-                                )
-                            }
-
-                            ViewLayoutMode.KANBAN -> {
-                                KanbanView(
-                                    habits = filteredHabits,
-                                    onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
-                                    onOpenProgressDialog = { quantitativeHabitTarget = it },
-                                    onStartTimer = { pomodoroHabitTarget = it },
-                                    onEditHabit = {
-                                        editingHabit = it.habit
-                                        showAddEditDialog = true
-                                    },
-                                    onArchiveHabit = { viewModel.setArchived(it, true) }
-                                )
-                            }
-
-                            ViewLayoutMode.TIMELINE -> {
-                                TimelineView(
-                                    habits = filteredHabits,
-                                    onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
-                                    onOpenProgressDialog = { quantitativeHabitTarget = it },
-                                    onStartTimer = { pomodoroHabitTarget = it },
-                                    onEditHabit = {
-                                        editingHabit = it.habit
-                                        showAddEditDialog = true
-                                    },
-                                    onArchiveHabit = { viewModel.setArchived(it, true) }
-                                )
                             }
                         }
                     }
@@ -652,6 +744,9 @@ fun HabitFlowApp(
             onCreateCategory = { newCategory ->
                 viewModel.addCategory(newCategory)
             },
+            onOpenManageCategories = {
+                showManageCategoriesDialog = true
+            },
             onDeleteHabit = { habitId ->
                 viewModel.deleteHabit(habitId)
             },
@@ -664,11 +759,30 @@ fun HabitFlowApp(
     // Main Screen Create Category Dialog
     if (showCreateCategoryDialogMain) {
         CreateCategoryDialog(
+            existingCategoryNames = uiState.categories.map { it.name },
             onDismiss = { showCreateCategoryDialogMain = false },
             onCategoryCreated = { newCategory ->
                 viewModel.addCategory(newCategory)
                 viewModel.setSelectedCategory(newCategory.name)
                 showCreateCategoryDialogMain = false
+            }
+        )
+    }
+
+    // Full Categories Management Dialog (CRUD: Create, View, Edit, Delete)
+    if (showManageCategoriesDialog) {
+        ManageCategoriesDialog(
+            categories = uiState.categories,
+            habits = uiState.habits,
+            onDismiss = { showManageCategoriesDialog = false },
+            onCreateCategory = { newCategory ->
+                viewModel.addCategory(newCategory)
+            },
+            onUpdateCategory = { oldName, updatedCategory ->
+                viewModel.updateCategory(oldName, updatedCategory)
+            },
+            onDeleteCategory = { categoryName, fallbackCategory ->
+                viewModel.deleteCategory(categoryName, fallbackCategory)
             }
         )
     }
@@ -743,6 +857,74 @@ fun HabitFlowApp(
             onDismiss = { showThemeSwitcherDialog = false }
         )
     }
+
+    // Archived Habits Management Dialog (View, Search, Unarchive, Edit, Delete)
+    if (showArchivedHabitsDialog) {
+        ArchivedHabitsDialog(
+            archivedHabits = uiState.archivedHabits,
+            onDismiss = { showArchivedHabitsDialog = false },
+            onUnarchiveHabit = { habitId ->
+                viewModel.setArchived(habitId, false)
+            },
+            onEditHabit = { habit ->
+                showArchivedHabitsDialog = false
+                editingHabit = habit
+                showAddEditDialog = true
+            },
+            onDeletePermanently = { habitId ->
+                viewModel.deleteHabit(habitId)
+            },
+            onViewDetail = { habit ->
+                showArchivedHabitsDialog = false
+                selectedDetailHabit = HabitWithStats(
+                    habit = habit,
+                    isCompletedToday = false
+                )
+            }
+        )
+    }
+
+    // Full Habit Detail Dialog (Stats, Consistency Heatmap, Reminders, Sub-tasks, Quick Actions)
+    selectedDetailHabit?.let { habitStat ->
+        HabitDetailDialog(
+            habitWithStats = habitStat,
+            allLogs = uiState.allLogs,
+            onDismiss = { selectedDetailHabit = null },
+            onToggleTodayCompletion = {
+                viewModel.toggleHabitCompletion(habitStat.habit.id)
+            },
+            onStartPomodoro = {
+                selectedDetailHabit = null
+                pomodoroHabitTarget = habitStat
+            },
+            onEditHabit = {
+                val h = habitStat.habit
+                selectedDetailHabit = null
+                editingHabit = h
+                showAddEditDialog = true
+            },
+            onArchiveHabit = {
+                viewModel.setArchived(habitStat.habit.id, true)
+                selectedDetailHabit = null
+            },
+            onUnarchiveHabit = if (habitStat.habit.isArchived) {
+                {
+                    viewModel.setArchived(habitStat.habit.id, false)
+                    selectedDetailHabit = null
+                }
+            } else null,
+            onDeleteHabit = {
+                viewModel.deleteHabit(habitStat.habit.id)
+                selectedDetailHabit = null
+            },
+            onToggleSubTask = { subTask, completed ->
+                viewModel.toggleSubTask(subTask.id, completed)
+            },
+            onToggleDateCompletion = { dateStr ->
+                viewModel.toggleHabitCompletion(habitStat.habit.id, dateStr)
+            }
+        )
+    }
 }
 
 @Composable
@@ -764,7 +946,12 @@ private fun EmptyHabitsState(
                 .background(Color(0xFF6366F1).copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "🚀", fontSize = 36.sp)
+            Icon(
+                imageVector = Icons.Default.RocketLaunch,
+                contentDescription = null,
+                tint = Color(0xFF6366F1),
+                modifier = Modifier.size(36.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -808,3 +995,132 @@ private fun EmptyHabitsState(
         }
     }
 }
+
+@Composable
+fun GamificationXpToastBanner(
+    userStats: com.example.model.UserStats,
+    gainedXp: Int,
+    onOpenGamification: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val levelProgress = remember(userStats.xp) {
+        GamificationConfig.getProgress(userStats.xp)
+    }
+
+    val primaryColor = try {
+        Color(android.graphics.Color.parseColor(levelProgress.primaryColorHex))
+    } catch (_: Exception) {
+        Color(0xFF6366F1)
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onOpenGamification() }
+            .testTag("gamification_xp_toast_banner"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(primaryColor, Color(0xFF10B981)))),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(primaryColor, Color(0xFFEC4899))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Lv.${levelProgress.currentLevel}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = levelProgress.levelTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.2f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "+$gainedXp XP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF10B981)
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "${levelProgress.currentXp} XP · Faltan ${levelProgress.xpNeededForNextLevel} XP para Lv.${levelProgress.currentLevel + 1}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cerrar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LinearProgressIndicator(
+                progress = { levelProgress.progressFraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = primaryColor,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+

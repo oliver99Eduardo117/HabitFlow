@@ -45,6 +45,8 @@ fun HabitTileCard(
     onToggleSubTask: (SubTask, Boolean) -> Unit,
     onEditHabit: () -> Unit,
     onArchiveHabit: () -> Unit,
+    onViewDetail: () -> Unit = {},
+    onDeleteHabit: (() -> Unit)? = null,
     onTestReminder: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -58,6 +60,7 @@ fun HabitTileCard(
 
     var expandedMenu by remember { mutableStateOf(false) }
     var showSubTasks by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     val cardScale by animateFloatAsState(
         targetValue = if (isCompleted) 0.98f else 1f,
@@ -74,6 +77,7 @@ fun HabitTileCard(
         modifier = modifier
             .fillMaxWidth()
             .scale(cardScale)
+            .clickable { onViewDetail() }
             .testTag("habit_card_${habit.id}"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
@@ -201,8 +205,13 @@ fun HabitTileCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text(text = "🔥", fontSize = 12.sp)
-                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = Icons.Default.LocalFireDepartment,
+                                contentDescription = null,
+                                tint = Color(0xFFEA580C),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = "${habitWithStats.currentStreak}",
                                 style = MaterialTheme.typography.labelMedium,
@@ -231,6 +240,14 @@ fun HabitTileCard(
                         onDismissRequest = { expandedMenu = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Ver detalles & consistencia") },
+                            leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null, tint = habitColor) },
+                            onClick = {
+                                expandedMenu = false
+                                onViewDetail()
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Cronómetro / Pomodoro") },
                             leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null, tint = habitColor) },
                             onClick = {
@@ -257,13 +274,24 @@ fun HabitTileCard(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Archivar") },
+                            text = { Text("Archivar hábito") },
                             leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
                             onClick = {
                                 expandedMenu = false
                                 onArchiveHabit()
                             }
                         )
+                        if (onDeleteHabit != null) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Eliminar hábito", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    expandedMenu = false
+                                    showDeleteConfirmation = true
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -296,12 +324,21 @@ fun HabitTileCard(
                     )
 
                     if (isOverachieved) {
-                        Text(
-                            text = "🚀 ¡Meta superada!",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF10B981),
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.RocketLaunch,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "¡Meta superada!",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
@@ -469,5 +506,41 @@ fun HabitTileCard(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmation && onDeleteHabit != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text("¿Eliminar este hábito?")
+            },
+            text = {
+                Text("¿Estás seguro de que deseas eliminar permanentemente \"${habit.title}\"? Se borrarán también sus registros y estadísticas.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteHabit()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Eliminar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }

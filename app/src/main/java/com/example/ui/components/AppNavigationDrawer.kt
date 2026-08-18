@@ -45,6 +45,9 @@ fun AppNavigationDrawerContent(
     onToggleDynamicColor: (Boolean) -> Unit,
     onOpenThemeDialog: () -> Unit,
     onOpenTemplates: () -> Unit,
+    onOpenManageCategories: () -> Unit = {},
+    onOpenArchivedHabits: () -> Unit = {},
+    archivedHabitsCount: Int = 0,
     onExportJson: suspend () -> String,
     onExportCsv: suspend () -> String,
     onRescheduleReminders: () -> Unit = {},
@@ -442,6 +445,28 @@ fun AppNavigationDrawerContent(
             Spacer(modifier = Modifier.height(8.dp))
 
             // More Settings Options in Drawer
+            DrawerSettingsItem(
+                title = if (archivedHabitsCount > 0) "Hábitos Archivados ($archivedHabitsCount)" else "Hábitos Archivados",
+                subtitle = "Ver, reactivar y gestionar hábitos en pausa",
+                icon = Icons.Default.Archive,
+                testTag = "drawer_archived_habits_item",
+                onClick = {
+                    onOpenArchivedHabits()
+                    onCloseDrawer()
+                }
+            )
+
+            DrawerSettingsItem(
+                title = "Gestión de Categorías",
+                subtitle = "Crear, ver, editar y eliminar categorías",
+                icon = Icons.Default.Category,
+                testTag = "drawer_manage_categories_item",
+                onClick = {
+                    onOpenManageCategories()
+                    onCloseDrawer()
+                }
+            )
+
             DrawerSettingsItem(
                 title = "Personalización Visual Completa",
                 subtitle = "Paletas, contrastes y vista previa",

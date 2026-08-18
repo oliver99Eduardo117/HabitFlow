@@ -58,14 +58,15 @@ object DateUtils {
     }
 
     /**
-     * Generates a grid of dates for the contribution/heatmap graph (e.g. past 14 weeks = 98 days or 24 weeks).
+     * Generates a grid of dates for the contribution/heatmap graph (weeks * 7 days).
+     * Every week column starts on Monday (index 0) and ends on Sunday (index 6).
      */
-    fun getHeatmapDateMatrix(weeks: Int = 16): List<List<String>> {
+    fun getHeatmapDateMatrix(weeks: Int = 18): List<List<String>> {
         val cal = Calendar.getInstance()
-        // Align to current week's Sunday/Saturday
-        val currentDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) // 1=Sun, 7=Sat
-        val daysToFillCurrentWeek = 7 - currentDayOfWeek
-        cal.add(Calendar.DAY_OF_YEAR, daysToFillCurrentWeek)
+        // Align to current week's Sunday (end of current ISO week)
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val daysUntilSunday = if (dayOfWeek == Calendar.SUNDAY) 0 else (Calendar.SATURDAY - dayOfWeek + 1)
+        cal.add(Calendar.DAY_OF_YEAR, daysUntilSunday)
 
         val totalDays = weeks * 7
         cal.add(Calendar.DAY_OF_YEAR, -(totalDays - 1))

@@ -40,6 +40,7 @@ fun AddEditHabitDialog(
     onDismiss: () -> Unit,
     onSaveHabit: (Habit, List<String>) -> Unit,
     onCreateCategory: (Category) -> Unit = {},
+    onOpenManageCategories: () -> Unit = {},
     onDeleteHabit: ((Long) -> Unit)? = null,
     onTestReminder: ((Habit) -> Unit)? = null
 ) {
@@ -235,12 +236,12 @@ fun AddEditHabitDialog(
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Category,
+                                        imageVector = Icons.Default.Palette,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Galería 🎨", fontSize = 12.sp)
+                                    Text("Galería", fontSize = 12.sp)
                                 }
                             }
 
@@ -372,6 +373,19 @@ fun AddEditHabitDialog(
                                 Icon(
                                     imageVector = Icons.Default.AddCircleOutline,
                                     contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        )
+
+                        AssistChip(
+                            onClick = onOpenManageCategories,
+                            label = { Text("Gestionar", fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Gestionar categorías",
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
@@ -622,18 +636,25 @@ fun AddEditHabitDialog(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     val presets = listOf(
-                                        "🌅 Mañana" to ("07" to "00"),
-                                        "☀️ Mediodía" to ("13" to "00"),
-                                        "🌆 Tarde" to ("18" to "30"),
-                                        "🌙 Noche" to ("21" to "30")
+                                        Triple("Mañana", "07" to "00", Icons.Default.WbSunny),
+                                        Triple("Mediodía", "13" to "00", Icons.Default.LightMode),
+                                        Triple("Tarde", "18" to "30", Icons.Default.WbTwilight),
+                                        Triple("Noche", "21" to "30", Icons.Default.DarkMode)
                                     )
-                                    presets.forEach { (label, time) ->
+                                    presets.forEach { (label, time, icon) ->
                                         val isSelected = reminderHour == time.first && reminderMinute == time.second
                                         FilterChip(
                                             selected = isSelected,
                                             onClick = {
                                                 reminderHour = time.first
                                                 reminderMinute = time.second
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
                                             },
                                             label = { Text(label, fontSize = 12.sp) }
                                         )
@@ -699,17 +720,25 @@ fun AddEditHabitDialog(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     val advanceOptions = listOf(
-                                        0 to "🎯 A la hora",
-                                        5 to "⏱️ 5 min antes",
-                                        10 to "⏱️ 10 min antes",
-                                        15 to "⏱️ 15 min antes",
-                                        30 to "⏱️ 30 min antes",
-                                        60 to "⏱️ 1 hora antes"
+                                        Triple(0, "A la hora", Icons.Default.AlarmOn),
+                                        Triple(5, "5 min antes", Icons.Default.Timer),
+                                        Triple(10, "10 min antes", Icons.Default.Timer),
+                                        Triple(15, "15 min antes", Icons.Default.Timer),
+                                        Triple(30, "30 min antes", Icons.Default.Timer),
+                                        Triple(60, "1 hora antes", Icons.Default.HourglassTop)
                                     )
-                                    advanceOptions.forEach { (mins, label) ->
+                                    advanceOptions.forEach { (mins, label, icon) ->
+                                        val isSelected = reminderMinutesAdvance == mins
                                         FilterChip(
-                                            selected = reminderMinutesAdvance == mins,
+                                            selected = isSelected,
                                             onClick = { reminderMinutesAdvance = mins },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            },
                                             label = { Text(label, fontSize = 11.sp) }
                                         )
                                     }
@@ -722,7 +751,7 @@ fun AddEditHabitDialog(
                                     value = reminderCustomMessage,
                                     onValueChange = { reminderCustomMessage = it },
                                     label = { Text("Mensaje o motivación personalizada (opcional)") },
-                                    placeholder = { Text("Ej: ¡Prepárate! Es hora de tu momento de lectura.") },
+                                    placeholder = { Text("Ej: Prepárate, es momento de cumplir tu meta diaria.") },
                                     modifier = Modifier.fillMaxWidth(),
                                     maxLines = 2,
                                     leadingIcon = {
@@ -800,7 +829,7 @@ fun AddEditHabitDialog(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("🔔 Probar notificación en este dispositivo", fontSize = 12.sp)
+                                    Text("Probar notificación en este dispositivo", fontSize = 12.sp)
                                 }
                             }
                         }

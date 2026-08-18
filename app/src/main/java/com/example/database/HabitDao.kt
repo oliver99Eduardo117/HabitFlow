@@ -38,4 +38,10 @@ interface HabitDao {
 
     @Query("DELETE FROM habits WHERE id = :id")
     suspend fun deleteHabitById(id: Long)
+
+    @Query("UPDATE habits SET category = :newCategory WHERE category = :oldCategory")
+    suspend fun updateHabitsCategory(oldCategory: String, newCategory: String)
+
+    @Query("SELECT COUNT(*) FROM habits WHERE category = :categoryName")
+    suspend fun getHabitsCountByCategory(categoryName: String): Int
 }

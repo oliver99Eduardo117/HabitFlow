@@ -120,15 +120,15 @@ class HabitReminderReceiver : BroadcastReceiver() {
 
         val contentMessage = when {
             !customMsg.isNullOrBlank() -> customMsg
-            advanceMinutes > 0 && !isSnooze -> "⏰ Tu hábito comenzará en $advanceMinutes minutos. ¡Prepárate!"
-            isSnooze -> "⏰ Recordatorio pospuesto: ¡Es hora de realizar tu hábito!"
+            advanceMinutes > 0 && !isSnooze -> "Tu hábito comenzará en $advanceMinutes minutos. ¡Prepárate!"
+            isSnooze -> "Recordatorio pospuesto: Es momento de realizar tu hábito."
             habitDesc.isNotBlank() -> habitDesc
             else -> "Es momento de cumplir con tu hábito diario y mantener tu racha activa."
         }
 
         val builder = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDERS_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("⏰ ¡Hora de $habitTitle!")
+            .setContentTitle("Hora de $habitTitle")
             .setContentText(contentMessage)
             .setSubText(habitCategory)
             .setColor(parsedColor)
@@ -139,12 +139,12 @@ class HabitReminderReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .addAction(
                 android.R.drawable.checkbox_on_background,
-                "✅ Marcar Hecho",
+                "Marcar Hecho",
                 completePendingIntent
             )
             .addAction(
                 android.R.drawable.ic_popup_sync,
-                "⏱️ Posponer 15m",
+                "Posponer 15m",
                 snoozePendingIntent
             )
 
@@ -162,7 +162,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
             )
             builder.addAction(
                 android.R.drawable.ic_media_play,
-                "⏳ Pomodoro (${timerMins}m)",
+                "Pomodoro (${timerMins}m)",
                 pomodoroPendingIntent
             )
         }
@@ -192,7 +192,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
         // Show immediate success notification feedback
         val successNotification = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDERS_ID)
             .setSmallIcon(android.R.drawable.checkbox_on_background)
-            .setContentTitle("🎉 ¡$habitTitle completado!")
+            .setContentTitle("¡$habitTitle completado!")
             .setContentText("¡Excelente trabajo! Has sumado +15 XP a tu racha diaria.")
             .setColor(AndroidColor.parseColor("#10B981"))
             .setPriority(NotificationCompat.PRIORITY_LOW)

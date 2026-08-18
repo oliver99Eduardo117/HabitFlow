@@ -342,7 +342,7 @@ object NotificationHelper {
 
         val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_REMINDERS_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("⏰ Prueba: ¡Hora de ${habit.title}!")
+            .setContentTitle("Prueba: Hora de ${habit.title}")
             .setContentText(
                 if (!habit.reminderCustomMessage.isNullOrBlank()) {
                     habit.reminderCustomMessage
@@ -362,12 +362,12 @@ object NotificationHelper {
             .setContentIntent(openAppPendingIntent)
             .addAction(
                 android.R.drawable.checkbox_on_background,
-                "✅ Marcar Hecho",
+                "Marcar Hecho",
                 completePendingIntent
             )
             .addAction(
                 android.R.drawable.ic_popup_sync,
-                "⏱️ Posponer 15m",
+                "Posponer 15m",
                 snoozePendingIntent
             )
 

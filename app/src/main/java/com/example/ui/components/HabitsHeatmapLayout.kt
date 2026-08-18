@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -125,8 +126,8 @@ private fun SingleHabitHeatmapCard(
         DateUtils.getHeatmapDateMatrix(weeks = weeks)
     }
 
-    val monthHeaders = remember(dateMatrix) {
-        calculateMonthHeaders(dateMatrix)
+    val monthPositions = remember(dateMatrix) {
+        calculateMonthPositions(dateMatrix)
     }
 
     val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
@@ -264,81 +265,110 @@ private fun SingleHabitHeatmapCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Scrollable Heatmap Matrix for this Habit
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                    .padding(horizontal = 10.dp, vertical = 10.dp)
-                    .horizontalScroll(scrollState)
+            // Heatmap Matrix Container (Fixed Left Day Column + Horizontally Scrollable Grid)
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Month Headers
                 Row(
-                    modifier = Modifier.padding(start = 20.dp, bottom = 4.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    monthHeaders.forEach { header ->
-                        Box(
-                            modifier = Modifier.width((header.weekSpan * 16).dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Text(
-                                text = header.monthName,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                }
-
-                // Grid Body: Weekday letters + Week columns
-                Row(verticalAlignment = Alignment.Top) {
-                    // Weekday initials (L, M, X, J, V, S, D)
+                    // STICKY / FIXED LEFT COLUMN: Day Labels (L, M, X, J, V, S, D)
                     Column(
-                        modifier = Modifier.padding(end = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.5.dp)
+                        modifier = Modifier.width(22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        listOf("L", "M", "X", "J", "V", "S", "D").forEach { label ->
+                        // Month Header spacer so day labels match the 7 grid rows exactly
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        val dayLabels = listOf("L", "M", "X", "J", "V", "S", "D")
+                        dayLabels.forEach { label ->
                             Box(
-                                modifier = Modifier.size(13.dp),
+                                modifier = Modifier.size(width = 22.dp, height = 14.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = label,
-                                    fontSize = 7.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                            Spacer(modifier = Modifier.height(3.dp))
                         }
                     }
 
-                    // Heatmap Columns
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                        dateMatrix.forEach { week ->
-                            Column(verticalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                                week.forEach { dateStr ->
-                                    val isCompleted = logsByDate.containsKey(dateStr)
-                                    val isSelected = (selectedDateStr == dateStr)
-                                    val isToday = (dateStr == DateUtils.getTodayDateString())
+                    // Divider line between fixed day column and scrollable heatmap grid
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 6.dp)
+                            .width(1.dp)
+                            .height((20 + 7 * 14 + 6 * 3).dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    )
 
-                                    val cellColor = if (isCompleted) habitColor else Color(0xFF334155).copy(alpha = 0.2f)
+                    val totalGridWidth = (dateMatrix.size * 17).dp
 
-                                    Box(
-                                        modifier = Modifier
-                                            .size(13.dp)
-                                            .clip(RoundedCornerShape(3.dp))
-                                            .background(cellColor)
-                                            .border(
-                                                width = if (isSelected) 1.5.dp else if (isToday) 1.dp else 0.5.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else if (isToday) habitColor else Color.Black.copy(alpha = 0.1f),
-                                                shape = RoundedCornerShape(3.dp)
-                                            )
-                                            .clickable {
-                                                selectedDateStr = if (selectedDateStr == dateStr) null else dateStr
-                                            }
-                                    )
+                    // SCROLLABLE RIGHT SECTION: Month Headers + Heatmap Columns
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(scrollState)
+                    ) {
+                        // Month Headers with precise horizontal offset
+                        Box(
+                            modifier = Modifier
+                                .width(totalGridWidth)
+                                .height(20.dp)
+                        ) {
+                            monthPositions.forEach { item ->
+                                val xOffset = (item.weekIndex * 17).dp
+                                Text(
+                                    text = item.monthName,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.offset(x = xOffset)
+                                )
+                            }
+                        }
+
+                        // Heatmap Columns
+                        Row(
+                            modifier = Modifier.width(totalGridWidth),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            dateMatrix.forEach { week ->
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    week.forEach { dateStr ->
+                                        val isCompleted = logsByDate.containsKey(dateStr)
+                                        val isSelected = (selectedDateStr == dateStr)
+                                        val isToday = (dateStr == DateUtils.getTodayDateString())
+
+                                        val cellColor = if (isCompleted) habitColor else Color(0xFF334155).copy(alpha = 0.2f)
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(cellColor)
+                                                .border(
+                                                    width = if (isSelected) 1.5.dp else if (isToday) 1.dp else 0.5.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else if (isToday) habitColor else Color.Black.copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(3.dp)
+                                                )
+                                                .clickable {
+                                                    selectedDateStr = if (selectedDateStr == dateStr) null else dateStr
+                                                }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -451,43 +481,41 @@ private fun MiniStatPill(
     }
 }
 
-private data class HabitLayoutMonthHeader(
+private data class HeatmapMonthPosition(
     val monthName: String,
-    val weekSpan: Int
+    val weekIndex: Int
 )
 
-private fun calculateMonthHeaders(dateMatrix: List<List<String>>): List<HabitLayoutMonthHeader> {
+private fun calculateMonthPositions(dateMatrix: List<List<String>>): List<HeatmapMonthPosition> {
     if (dateMatrix.isEmpty()) return emptyList()
-    val headers = mutableListOf<HabitLayoutMonthHeader>()
+    val positions = mutableListOf<HeatmapMonthPosition>()
     val iso = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val monthFmt = SimpleDateFormat("MMM", Locale("es", "ES"))
 
-    var currentMonth = ""
-    var currentSpan = 0
+    var lastMonth = ""
+    var lastAddedWeek = -10
 
-    dateMatrix.forEach { week ->
-        val midDay = week.getOrNull(3) ?: week.firstOrNull()
-        val monthStr = if (midDay != null) {
+    dateMatrix.forEachIndexed { weekIndex, week ->
+        val firstOfMonth = week.find { it.endsWith("-01") }
+        val targetDay = firstOfMonth ?: week.getOrNull(3) ?: week.firstOrNull()
+        val monthStr = if (targetDay != null) {
             try {
-                val d = iso.parse(midDay)
+                val d = iso.parse(targetDay)
                 if (d != null) monthFmt.format(d).replaceFirstChar { it.uppercase() } else ""
             } catch (_: Exception) { "" }
         } else ""
 
-        if (monthStr != currentMonth) {
-            if (currentMonth.isNotEmpty() && currentSpan > 0) {
-                headers.add(HabitLayoutMonthHeader(currentMonth, currentSpan))
+        if (monthStr.isNotEmpty()) {
+            if (weekIndex == 0) {
+                positions.add(HeatmapMonthPosition(monthStr, 0))
+                lastMonth = monthStr
+                lastAddedWeek = 0
+            } else if (monthStr != lastMonth && (weekIndex - lastAddedWeek) >= 3) {
+                positions.add(HeatmapMonthPosition(monthStr, weekIndex))
+                lastMonth = monthStr
+                lastAddedWeek = weekIndex
             }
-            currentMonth = monthStr
-            currentSpan = 1
-        } else {
-            currentSpan++
         }
     }
-
-    if (currentMonth.isNotEmpty() && currentSpan > 0) {
-        headers.add(HabitLayoutMonthHeader(currentMonth, currentSpan))
-    }
-
-    return headers
+    return positions
 }

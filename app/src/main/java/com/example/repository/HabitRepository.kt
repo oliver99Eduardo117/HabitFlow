@@ -125,16 +125,25 @@ class HabitRepository(
     ) = withContext(Dispatchers.IO) {
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val habit = habitDao.getHabitById(habitId)
+        val target = habit?.targetValue ?: 1f
+        val wasCompleted = existingLog != null && existingLog.value >= target
+        val isNowCompleted = value >= target
 
         if (value <= 0f) {
             habitLogDao.deleteLog(habitId, date)
+            if (wasCompleted) {
+                deductXpForCompletion(habit, existingLog?.value ?: target)
+            }
         } else {
             val log = existingLog?.copy(value = value, notes = notes, timestamp = System.currentTimeMillis())
                 ?: HabitLog(habitId = habitId, date = date, value = value, notes = notes)
             habitLogDao.insertOrUpdateLog(log)
 
-            // Reward XP and evaluate gamification
-            awardXpForCompletion(habit, value)
+            if (!wasCompleted && isNowCompleted) {
+                awardXpForCompletion(habit, value)
+            } else if (wasCompleted && !isNowCompleted) {
+                deductXpForCompletion(habit, existingLog?.value ?: target)
+            }
         }
     }
 
@@ -144,6 +153,7 @@ class HabitRepository(
 
         if (existingLog != null && existingLog.value >= habit.targetValue) {
             habitLogDao.deleteLog(habitId, date)
+            deductXpForCompletion(habit, existingLog.value)
             false
         } else {
             val log = HabitLog(
@@ -160,6 +170,27 @@ class HabitRepository(
 
     suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) = withContext(Dispatchers.IO) {
         subTaskDao.setSubTaskCompleted(subTaskId, isCompleted)
+        if (isCompleted) {
+            awardXpForSubTask()
+        } else {
+            deductXpForSubTask()
+        }
+    }
+
+    private suspend fun awardXpForSubTask() {
+        val currentStats = userStatsDao.getUserStats() ?: UserStats()
+        val bonus = if (currentStats.isHardcoreMode) (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else GamificationConfig.XP_SUBTASK_COMPLETION
+        val newXp = currentStats.xp + bonus
+        val newLevel = GamificationConfig.calculateLevel(newXp)
+        checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+    }
+
+    private suspend fun deductXpForSubTask() {
+        val currentStats = userStatsDao.getUserStats() ?: UserStats()
+        val penalty = if (currentStats.isHardcoreMode) (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else GamificationConfig.XP_SUBTASK_COMPLETION
+        val newXp = maxOf(0, currentStats.xp - penalty)
+        val newLevel = GamificationConfig.calculateLevel(newXp)
+        checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
     }
 
     suspend fun addSubTask(habitId: Long, title: String) = withContext(Dispatchers.IO) {
@@ -170,23 +201,107 @@ class HabitRepository(
         categoryDao.insertCategory(category)
     }
 
+    suspend fun updateCategory(oldName: String, updatedCategory: Category) = withContext(Dispatchers.IO) {
+        if (oldName != updatedCategory.name) {
+            // New primary key: insert new category, update associated habits, then delete old category
+            categoryDao.insertCategory(updatedCategory)
+            habitDao.updateHabitsCategory(oldName, updatedCategory.name)
+            categoryDao.deleteCategoryByName(oldName)
+        } else {
+            categoryDao.insertCategory(updatedCategory)
+        }
+    }
+
+    suspend fun deleteCategory(categoryName: String, fallbackCategory: String = "Rutina Personal") = withContext(Dispatchers.IO) {
+        // Reassign habits in this category to the fallback category if any exist
+        val count = habitDao.getHabitsCountByCategory(categoryName)
+        if (count > 0) {
+            // Ensure fallback category exists
+            val existingFallback = categoryDao.getCategoryByName(fallbackCategory)
+            if (existingFallback == null) {
+                categoryDao.insertCategory(
+                    Category(
+                        name = fallbackCategory,
+                        colorHex = "#EC4899",
+                        iconName = "person",
+                        isDefault = true
+                    )
+                )
+            }
+            habitDao.updateHabitsCategory(categoryName, fallbackCategory)
+        }
+        categoryDao.deleteCategoryByName(categoryName)
+    }
+
+    suspend fun getHabitsCountForCategory(categoryName: String): Int = withContext(Dispatchers.IO) {
+        habitDao.getHabitsCountByCategory(categoryName)
+    }
+
     private suspend fun awardXpForCompletion(habit: Habit?, completedValue: Float) {
         val currentStats = userStatsDao.getUserStats() ?: UserStats()
-        val baseHabitXp = 25
-        val overachievementBonus = if (habit != null && completedValue > habit.targetValue) 15 else 0
-        val earnedXp = baseHabitXp + overachievementBonus
+        var baseHabitXp = GamificationConfig.XP_HABIT_COMPLETION
+        if (habit != null && completedValue > habit.targetValue) {
+            baseHabitXp += GamificationConfig.XP_OVERACHIEVEMENT_BONUS
+        }
+        val earnedXp = if (currentStats.isHardcoreMode) {
+            (baseHabitXp * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+        } else {
+            baseHabitXp
+        }
 
         val newXp = currentStats.xp + earnedXp
-        val newLevel = 1 + (newXp / 200)
+        val newLevel = GamificationConfig.calculateLevel(newXp)
         val newTotalCheckIns = currentStats.totalCheckIns + 1
 
-        // Check badge unlocks
-        val updatedBadges = currentStats.unlockedBadgeIds.toMutableList()
+        // Calculate best streak from all logs
+        val allLogs = habitLogDao.getAllLogs().first()
+        val datesWithCompletion = allLogs.filter { it.value > 0f }.map { it.date }.toSet()
+        val (_, bestStreak) = DateUtils.calculateStreak(datesWithCompletion)
+        val allTimeBest = maxOf(currentStats.bestStreakAllTime, bestStreak)
+
+        val updated = currentStats.copy(
+            xp = newXp,
+            level = newLevel,
+            totalCheckIns = newTotalCheckIns,
+            bestStreakAllTime = allTimeBest,
+            lastActiveDate = DateUtils.getTodayDateString()
+        )
+        checkAndSaveGamification(updated)
+    }
+
+    private suspend fun deductXpForCompletion(habit: Habit?, previousValue: Float) {
+        val currentStats = userStatsDao.getUserStats() ?: UserStats()
+        var baseHabitXp = GamificationConfig.XP_HABIT_COMPLETION
+        if (habit != null && previousValue > habit.targetValue) {
+            baseHabitXp += GamificationConfig.XP_OVERACHIEVEMENT_BONUS
+        }
+        val lostXp = if (currentStats.isHardcoreMode) {
+            (baseHabitXp * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+        } else {
+            baseHabitXp
+        }
+
+        val newXp = maxOf(0, currentStats.xp - lostXp)
+        val newLevel = GamificationConfig.calculateLevel(newXp)
+        val newTotalCheckIns = maxOf(0, currentStats.totalCheckIns - 1)
+
+        val updated = currentStats.copy(
+            xp = newXp,
+            level = newLevel,
+            totalCheckIns = newTotalCheckIns
+        )
+        userStatsDao.insertOrUpdate(updated)
+    }
+
+    private suspend fun checkAndSaveGamification(stats: UserStats) {
+        val updatedBadges = stats.unlockedBadgeIds.toMutableList()
         AllBadges.forEach { badge ->
             if (!updatedBadges.contains(badge.id)) {
                 val shouldUnlock = when {
-                    badge.requiredCompletions > 0 && newTotalCheckIns >= badge.requiredCompletions -> true
-                    badge.requiredXp > 0 && newXp >= badge.requiredXp -> true
+                    badge.requiredCompletions > 0 && stats.totalCheckIns >= badge.requiredCompletions -> true
+                    badge.requiredXp > 0 && stats.xp >= badge.requiredXp -> true
+                    badge.requiredStreak > 0 && stats.bestStreakAllTime >= badge.requiredStreak -> true
+                    badge.requiredFocusMinutes > 0 && stats.totalFocusMinutes >= badge.requiredFocusMinutes -> true
                     else -> false
                 }
                 if (shouldUnlock) {
@@ -195,26 +310,24 @@ class HabitRepository(
             }
         }
 
-        val updatedStats = currentStats.copy(
-            xp = newXp,
-            level = newLevel,
-            totalCheckIns = newTotalCheckIns,
-            unlockedBadgeIds = updatedBadges,
-            lastActiveDate = DateUtils.getTodayDateString()
-        )
-        userStatsDao.insertOrUpdate(updatedStats)
+        val finalStats = stats.copy(unlockedBadgeIds = updatedBadges)
+        userStatsDao.insertOrUpdate(finalStats)
     }
 
     suspend fun addFocusSession(minutes: Int) = withContext(Dispatchers.IO) {
         val stats = userStatsDao.getUserStats() ?: UserStats()
-        val earnedXp = minutes * 2
+        var earnedXp = minutes * GamificationConfig.XP_FOCUS_PER_MINUTE
+        if (stats.isHardcoreMode) {
+            earnedXp = (earnedXp * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+        }
         val newXp = stats.xp + earnedXp
+        val newLevel = GamificationConfig.calculateLevel(newXp)
         val updated = stats.copy(
             xp = newXp,
-            level = 1 + (newXp / 200),
+            level = newLevel,
             totalFocusMinutes = stats.totalFocusMinutes + minutes
         )
-        userStatsDao.insertOrUpdate(updated)
+        checkAndSaveGamification(updated)
     }
 
     suspend fun updateHardcoreMode(enabled: Boolean) = withContext(Dispatchers.IO) {

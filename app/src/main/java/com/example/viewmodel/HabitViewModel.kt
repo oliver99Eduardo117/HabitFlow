@@ -327,6 +327,33 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun addCategory(category: Category) {
         viewModelScope.launch {
             repository.addCategory(category)
+            _uiState.update { it.copy(snackbarMessage = "Categoría '${category.name}' creada exitosamente") }
+        }
+    }
+
+    fun updateCategory(oldName: String, updatedCategory: Category) {
+        viewModelScope.launch {
+            repository.updateCategory(oldName, updatedCategory)
+            _uiState.update { current ->
+                val newSelectedCategory = if (current.selectedCategory == oldName) updatedCategory.name else current.selectedCategory
+                current.copy(
+                    selectedCategory = newSelectedCategory,
+                    snackbarMessage = "Categoría '${updatedCategory.name}' actualizada"
+                )
+            }
+        }
+    }
+
+    fun deleteCategory(categoryName: String, fallbackCategory: String = "Rutina Personal") {
+        viewModelScope.launch {
+            repository.deleteCategory(categoryName, fallbackCategory)
+            _uiState.update { current ->
+                val newSelectedCategory = if (current.selectedCategory == categoryName) null else current.selectedCategory
+                current.copy(
+                    selectedCategory = newSelectedCategory,
+                    snackbarMessage = "Categoría '$categoryName' eliminada"
+                )
+            }
         }
     }
 
@@ -377,12 +404,12 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testHabitReminder(habit: Habit) {
         NotificationHelper.showTestReminderNotification(getApplication<Application>(), habit)
-        _uiState.update { it.copy(snackbarMessage = "🔔 Notificación de prueba enviada para: ${habit.title}") }
+        _uiState.update { it.copy(snackbarMessage = "Notificación de prueba enviada para: ${habit.title}") }
     }
 
     fun rescheduleAllReminders() {
         NotificationHelper.rescheduleAllReminders(getApplication<Application>())
-        _uiState.update { it.copy(snackbarMessage = "⏰ Recordatorios sincronizados") }
+        _uiState.update { it.copy(snackbarMessage = "Recordatorios sincronizados correctamente") }
     }
 
     fun dismissSnackbar() {
