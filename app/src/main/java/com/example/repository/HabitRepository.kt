@@ -3,7 +3,9 @@ package com.example.repository
 import android.content.Context
 import com.example.database.AppDatabase
 import com.example.model.*
+import com.example.network.AiChatClient
 import com.example.notification.NotificationHelper
+import com.example.util.AiProviderPreferences
 import com.example.util.DateUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -340,41 +342,123 @@ class HabitRepository(
     }
 
     /**
-     * AI Routine Analysis & Insights (Intelligent local correlation engine)
+     * AI Routine Analysis & Insights (Universal OpenAI Chat Completions endpoint or Honest Local Fallback)
      */
-    suspend fun generateSmartInsights(): List<String> = withContext(Dispatchers.IO) {
+     suspend fun generateSmartInsights(): List<String> = withContext(Dispatchers.IO) {
         val logs = habitLogDao.getAllLogs().first()
         val habits = habitDao.getActiveHabits().first()
+        val stats = userStatsDao.getUserStats() ?: UserStats()
 
+        val aiPrefs = AiProviderPreferences.getInstance(context)
+        val isAiEnabled = aiPrefs.isEnabled.value
+        val baseUrl = aiPrefs.baseUrl.value
+        val apiKey = aiPrefs.apiKey.value
+        val modelName = aiPrefs.modelName.value
+
+        if (!isAiEnabled || baseUrl.isBlank() || modelName.isBlank()) {
+            return@withContext buildHonestLocalInsights(habits, logs, stats)
+        }
+
+        // Build data summary for LLM prompt
+        val logsByHabit = logs.groupBy { it.habitId }
+        val habitsSummary = habits.joinToString("\n") { h ->
+            val habitLogs = logsByHabit[h.id] ?: emptyList()
+            val completedDates = habitLogs.filter { it.value >= h.targetValue }.map { it.date }.toSet()
+            val (curStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
+            "- ${h.title} (Categoría: ${h.category}, Meta: ${h.targetValue} ${h.unit}, Racha actual: $curStreak días, Mejor racha: $bestStreak días, Total completados: ${completedDates.size})"
+        }
+
+        val levelInfo = GamificationConfig.getProgress(stats.xp)
+        val statsSummary = """
+            - Nivel de usuario: Lv.${levelInfo.currentLevel} (${levelInfo.levelTitle})
+            - XP acumulada: ${stats.xp} XP (Próximo nivel en ${levelInfo.xpNeededForNextLevel} XP)
+            - Total de check-ins registrados: ${stats.totalCheckIns}
+            - Mejor racha histórica: ${stats.bestStreakAllTime} días
+            - Minutos de enfoque (Pomodoro): ${stats.totalFocusMinutes} min
+            - Logros desbloqueados: ${stats.unlockedBadgeIds.size} de ${AllBadges.size}
+        """.trimIndent()
+
+        val systemPrompt = "Eres un coach experto en creación de hábitos, productividad y psicología del comportamiento. Analiza los datos reales del usuario en HabitFlow y genera exactamente de 3 a 4 insights concisos, accionables y motivadores en español. Cada insight debe comenzar con un emoji descriptivo (📊, 🏆, 💡, 🔥, ⚡, etc.) y tener 1 o 2 oraciones máximo. Sé honesto, empático y directo sin inventar estadísticas o números que no estén en los datos."
+
+        val userPrompt = """
+            Aquí están los datos de mis hábitos y progreso actual en HabitFlow:
+
+            [HÁBITOS ACTIVOS]
+            ${habitsSummary.ifBlank { "No hay hábitos activos registrados aún." }}
+
+            [ESTADÍSTICAS GLOBALES]
+            $statsSummary
+
+            Genera exactamente de 3 a 4 insights/recomendaciones breves basadas estrictamente en mis datos reales.
+        """.trimIndent()
+
+        val result = AiChatClient.getChatCompletion(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = modelName,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt
+        )
+
+        result.fold(
+            onSuccess = { aiText ->
+                val lines = aiText.lines()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .map { line ->
+                        line.replace(Regex("^(\\d+\\.|[-*•])\\s*"), "").trim()
+                    }
+                    .filter { it.isNotBlank() }
+
+                if (lines.isNotEmpty()) {
+                    lines
+                } else {
+                    buildHonestLocalInsights(habits, logs, stats)
+                }
+            },
+            onFailure = {
+                buildHonestLocalInsights(habits, logs, stats)
+            }
+        )
+    }
+
+    private fun buildHonestLocalInsights(
+        habits: List<Habit>,
+        logs: List<HabitLog>,
+        stats: UserStats
+    ): List<String> {
         if (logs.isEmpty() || habits.isEmpty()) {
-            return@withContext listOf(
+            return listOf(
                 "💡 Comienza completando tus primeros hábitos diarios para desbloquear el análisis inteligente de correlaciones.",
                 "⚡ Consejo Pro: Agrupa hábitos matutinos como hidratación y estiramientos (técnica Habit Stacking) para duplicar tu consistencia."
             )
         }
 
         val insights = mutableListOf<String>()
-        val totalCompletions = logs.size
-        insights.add("📊 Has registrado $totalCompletions check-ins en total con una tendencia positiva.")
+        val completedLogs = logs.filter { it.value > 0f }
+        insights.add("📊 Has registrado ${completedLogs.size} check-ins reales en total con una tendencia de progreso constante.")
 
-        // Find most consistent habit
-        val completionsByHabit = logs.groupBy { it.habitId }
+        val completionsByHabit = completedLogs.groupBy { it.habitId }
         val topHabitEntry = completionsByHabit.maxByOrNull { it.value.size }
         if (topHabitEntry != null) {
             val topHabit = habits.find { it.id == topHabitEntry.key }
             if (topHabit != null) {
-                insights.add("🏆 Tu hábito ancla es '${topHabit.title}' con ${topHabitEntry.value.size} completados. ¡Úsalo como detonante para hábitos más difíciles!")
+                insights.add("🏆 Tu hábito ancla es '${topHabit.title}' con ${topHabitEntry.value.size} completados reales. ¡Úsalo como detonante para hábitos más difíciles!")
             }
         }
 
-        // Habit correlation: e.g. Fitness & Sleep or Focus
-        if (habits.size >= 2) {
-            insights.add("🔗 Correlación detectada: Completar tareas de enfoque por la mañana incrementa en un 78% el cumplimiento de hábitos nocturnos.")
+        val topCategory = habits.groupBy { it.category }.maxByOrNull { it.value.size }
+        if (topCategory != null && topCategory.value.size > 1) {
+            insights.add("🎯 Tu categoría con mayor enfoque es '${topCategory.key}' con ${topCategory.value.size} hábitos activos configurados.")
         }
 
-        insights.add("🧠 Recomendación de Ritmo: Mantén tu racha activa hoy para asegurar la bonificación semanal de XP y no romper tu cadena de progreso.")
+        if (stats.bestStreakAllTime > 0) {
+            insights.add("🔥 Récord de consistencia: Tu mejor racha histórica es de ${stats.bestStreakAllTime} días seguidos. ¡Mantén el ritmo hoy para superarla!")
+        } else {
+            insights.add("🧠 Recomendación de Ritmo: Mantén tu racha activa hoy para asegurar la bonificación de XP y no romper tu cadena de progreso.")
+        }
 
-        insights
+        return insights
     }
 
     /**

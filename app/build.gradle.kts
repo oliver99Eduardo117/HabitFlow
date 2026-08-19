@@ -57,6 +57,17 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  sourceSets {
+    getByName("test") {
+      assets.directories.add("$projectDir/schemas")
+    }
+    getByName("androidTest") {
+      assets.directories.add("$projectDir/schemas")
+    }
+    getByName("debug") {
+      assets.directories.add("$projectDir/schemas")
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -69,6 +80,10 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+}
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
@@ -118,6 +133,7 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  testImplementation(libs.androidx.room.testing)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

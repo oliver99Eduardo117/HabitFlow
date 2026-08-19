@@ -46,6 +46,7 @@ fun AppNavigationDrawerContent(
     onOpenThemeDialog: () -> Unit,
     onOpenTemplates: () -> Unit,
     onOpenManageCategories: () -> Unit = {},
+    onOpenAiSettings: () -> Unit = {},
     onOpenArchivedHabits: () -> Unit = {},
     archivedHabitsCount: Int = 0,
     onExportJson: suspend () -> String,
@@ -463,6 +464,17 @@ fun AppNavigationDrawerContent(
                 testTag = "drawer_manage_categories_item",
                 onClick = {
                     onOpenManageCategories()
+                    onCloseDrawer()
+                }
+            )
+
+            DrawerSettingsItem(
+                title = "Proveedor de IA",
+                subtitle = "Conecta Gemini, OpenAI o tu propia IA local",
+                icon = Icons.Default.SmartToy,
+                testTag = "drawer_ai_settings_item",
+                onClick = {
+                    onOpenAiSettings()
                     onCloseDrawer()
                 }
             )

@@ -64,6 +64,7 @@ fun HabitFlowApp(
     var showArchivedHabitsDialog by remember { mutableStateOf(false) }
     var selectedDetailHabit by remember { mutableStateOf<HabitWithStats?>(null) }
     var showThemeSwitcherDialog by remember { mutableStateOf(false) }
+    var showAiSettingsDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
 
     // Transient XP Gain Notification Banner (shows temporarily ONLY when XP is actively earned)
@@ -121,6 +122,7 @@ fun HabitFlowApp(
                 onOpenThemeDialog = { showThemeSwitcherDialog = true },
                 onOpenTemplates = { showTemplatePicker = true },
                 onOpenManageCategories = { showManageCategoriesDialog = true },
+                onOpenAiSettings = { showAiSettingsDialog = true },
                 onOpenArchivedHabits = { showArchivedHabitsDialog = true },
                 archivedHabitsCount = uiState.archivedHabits.size,
                 onExportJson = { viewModel.getExportJson() },
@@ -851,6 +853,13 @@ fun HabitFlowApp(
                 viewModel.setDynamicColor(dyn)
             },
             onDismiss = { showThemeSwitcherDialog = false }
+        )
+    }
+
+    // AI Provider Configuration Dialog
+    if (showAiSettingsDialog) {
+        AiSettingsDialog(
+            onDismiss = { showAiSettingsDialog = false }
         )
     }
 
