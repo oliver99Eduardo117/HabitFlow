@@ -88,10 +88,29 @@ object IconHelper {
         HabitIconItem("pets", "Pasear Mascota / Perro", "Hogar & Vida", listOf("perro", "gato", "mascota", "animal"), Icons.Default.Pets),
         HabitIconItem("groups", "Socializar / Llamar Amigos", "Hogar & Vida", listOf("amigos", "llamar", "social", "familia", "contacto"), Icons.Default.Groups),
         HabitIconItem("emoji_events", "Metas & Victorias", "Hogar & Vida", listOf("victoria", "trofeo", "premio", "exito"), Icons.Default.EmojiEvents),
-        HabitIconItem("star", "Hábito Estrella", "Hogar & Vida", listOf("estrella", "favorito", "destacado"), Icons.Default.Star)
+        HabitIconItem("star", "Hábito Estrella", "Hogar & Vida", listOf("estrella", "favorito", "destacado"), Icons.Default.Star),
+
+        // Gamificación, Niveles & Insignias
+        HabitIconItem("sprout", "Brote / Inicio", "Gamificación", listOf("brote", "planta", "inicio", "semilla", "sprout"), Icons.Default.Eco),
+        HabitIconItem("local_fire_department", "Fuego / Racha", "Gamificación", listOf("fuego", "racha", "llama", "ardor"), Icons.Default.LocalFireDepartment),
+        HabitIconItem("military_tech", "Medalla / Rango", "Gamificación", listOf("medalla", "militar", "rango", "disciplina"), Icons.Default.MilitaryTech),
+        HabitIconItem("shield", "Escudo / Fortaleza", "Gamificación", listOf("escudo", "defensa", "fortaleza", "resistencia"), Icons.Default.Shield),
+        HabitIconItem("auto_awesome", "Destellos / Magia", "Gamificación", listOf("magia", "destellos", "brillo", "arquitecto"), Icons.Default.AutoAwesome),
+        HabitIconItem("workspace_premium", "Premio / Excelencia", "Gamificación", listOf("premio", "insignia", "premium", "medalla"), Icons.Default.WorkspacePremium),
+        HabitIconItem("diamond", "Diamante / Maestro", "Gamificación", listOf("diamante", "joya", "maestro", "zen"), Icons.Default.Diamond),
+        HabitIconItem("stars", "Estrellas / Leyenda", "Gamificación", listOf("estrellas", "galaxia", "leyenda", "triunfo"), Icons.Default.Stars),
+        HabitIconItem("rocket_launch", "Cohete / Despegue", "Gamificación", listOf("cohete", "lanzamiento", "despegue", "comienzo"), Icons.Default.RocketLaunch)
     )
 
-    val availableIcons: Map<String, ImageVector> = iconGallery.associate { it.id to it.vector }
+    val availableIcons: Map<String, ImageVector> = iconGallery.associate { it.id to it.vector } + mapOf(
+        "eco" to Icons.Default.Eco,
+        "fire" to Icons.Default.LocalFireDepartment,
+        "flame" to Icons.Default.LocalFireDepartment,
+        "trophy" to Icons.Default.EmojiEvents,
+        "medal" to Icons.Default.MilitaryTech,
+        "badge" to Icons.Default.WorkspacePremium,
+        "rocket" to Icons.Default.RocketLaunch
+    )
 
     val categories: List<String> = listOf("Todas") + iconGallery.map { it.category }.distinct()
 

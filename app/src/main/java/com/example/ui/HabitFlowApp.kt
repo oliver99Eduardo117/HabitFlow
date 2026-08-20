@@ -66,6 +66,7 @@ fun HabitFlowApp(
     var showThemeSwitcherDialog by remember { mutableStateOf(false) }
     var showAiSettingsDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
+    var activeStreakMilestone by remember { mutableStateOf<com.example.model.StreakMilestoneEvent?>(null) }
 
     // Transient XP Gain Notification Banner (shows temporarily ONLY when XP is actively earned)
     var recentGainedXp by remember { mutableStateOf(0) }
@@ -79,6 +80,13 @@ fun HabitFlowApp(
                 kotlinx.coroutines.delay(3500)
                 showXpNotificationBanner = false
             }
+        }
+    }
+
+    // Collect Streak Milestone Celebrations
+    LaunchedEffect(Unit) {
+        viewModel.streakMilestoneEvent.collect { milestone ->
+            activeStreakMilestone = milestone
         }
     }
 
@@ -928,6 +936,14 @@ fun HabitFlowApp(
             onToggleDateCompletion = { dateStr ->
                 viewModel.toggleHabitCompletion(habitStat.habit.id, dateStr)
             }
+        )
+    }
+
+    // Streak Milestone Gamification Celebration Dialog
+    activeStreakMilestone?.let { milestone ->
+        StreakMilestoneDialog(
+            milestone = milestone,
+            onDismiss = { activeStreakMilestone = null }
         )
     }
 }

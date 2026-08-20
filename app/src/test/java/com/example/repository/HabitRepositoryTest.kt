@@ -181,4 +181,33 @@ class HabitRepositoryTest {
         // Ensure no fake 78% is present
         assertFalse("Should not have fake made-up correlation percentage", insights.any { it.contains("78%") })
     }
+
+    @Test
+    fun `checkStreakMilestone awards bonus XP and returns milestone event for 7 day streak`() = runTest {
+        val habitId = repository.saveHabit(
+            Habit(
+                title = "Lectura",
+                category = "Crecimiento",
+                targetValue = 1f
+            )
+        )
+        // 7 days completion
+        for (i in 0..6) {
+            database.habitLogDao().insertOrUpdateLog(
+                HabitLog(
+                    habitId = habitId,
+                    date = DateUtils.getDaysAgoDateString(i),
+                    value = 1f
+                )
+            )
+        }
+
+        val milestone = repository.checkStreakMilestone(habitId)
+        org.junit.Assert.assertNotNull(milestone)
+        assertEquals(7, milestone?.streakDays)
+        assertEquals(100, milestone?.xpBonus)
+
+        val stats = database.userStatsDao().getUserStats()
+        assertTrue("Milestone XP bonus should be awarded", (stats?.xp ?: 0) >= 100)
+    }
 }

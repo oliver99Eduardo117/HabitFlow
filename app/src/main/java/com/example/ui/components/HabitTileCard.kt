@@ -1,16 +1,23 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,6 +75,15 @@ fun HabitTileCard(
         label = "scale"
     )
 
+    val cardInteractionSource = remember { MutableInteractionSource() }
+    val isCardPressed by cardInteractionSource.collectIsPressedAsState()
+
+    val pressedScale by animateFloatAsState(
+        targetValue = if (isCardPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "pressedScale"
+    )
+
     val currentVal = habitWithStats.todayLog?.value ?: 0f
     val targetVal = habit.targetValue
     val progressRatio = if (targetVal > 0f) (currentVal / targetVal).coerceIn(0f, 1f) else if (isCompleted) 1f else 0f
@@ -76,8 +92,11 @@ fun HabitTileCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .scale(cardScale)
-            .clickable { onViewDetail() }
+            .scale(cardScale * pressedScale)
+            .clickable(
+                interactionSource = cardInteractionSource,
+                indication = null
+            ) { onViewDetail() }
             .testTag("habit_card_${habit.id}"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
@@ -168,12 +187,27 @@ fun HabitTileCard(
 
                         if (!habitWithStats.isDependencyMet) {
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "🔒 Bloqueado",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Hábito bloqueado",
+                                    modifier = Modifier.size(11.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "Bloqueado",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
 
@@ -492,17 +526,30 @@ fun HabitTileCard(
                     ),
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isCompleted) Icons.Default.Check else Icons.Default.CheckCircleOutline,
-                        contentDescription = if (isCompleted) "Completado" else "Marcar",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isCompleted) "Hecho" else "Completar",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    AnimatedContent(
+                        targetState = isCompleted,
+                        transitionSpec = {
+                            (fadeIn() + scaleIn(initialScale = 0.8f)) togetherWith (fadeOut() + scaleOut(targetScale = 0.8f))
+                        },
+                        label = "toggle_btn_content"
+                    ) { completed ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (completed) Icons.Default.Check else Icons.Default.CheckCircleOutline,
+                                contentDescription = if (completed) "Completado" else "Marcar",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (completed) "Hecho" else "Completar",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -229,6 +229,119 @@ data class Badge(
     val requiredFocusMinutes: Int = 0
 )
 
+data class StreakMilestoneEvent(
+    val habitId: Long,
+    val habitTitle: String,
+    val streakDays: Int,
+    val xpBonus: Int,
+    val title: String,
+    val message: String,
+    val iconName: String = "local_fire_department",
+    val primaryColorHex: String = "#F59E0B",
+    val secondaryColorHex: String = "#EF4444"
+)
+
+object StreakMilestones {
+    val MILESTONE_DAYS = setOf(3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 365)
+
+    fun getMilestone(habitId: Long, habitTitle: String, streakDays: Int): StreakMilestoneEvent? {
+        return when (streakDays) {
+            3 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 3,
+                xpBonus = 50,
+                title = "¡Chispa de Consistencia!",
+                message = "Has completado 3 días consecutivos de '$habitTitle'. ¡Tu mente empieza a crear el hábito!",
+                iconName = "local_fire_department",
+                primaryColorHex = "#F59E0B",
+                secondaryColorHex = "#EF4444"
+            )
+            7 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 7,
+                xpBonus = 100,
+                title = "¡Una Semana Imparable!",
+                message = "¡7 días seguidos de '$habitTitle'! Has completado con éxito tu primer ciclo semanal.",
+                iconName = "military_tech",
+                primaryColorHex = "#6366F1",
+                secondaryColorHex = "#8B5CF6"
+            )
+            14 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 14,
+                xpBonus = 175,
+                title = "¡Fortaleza Quincenal!",
+                message = "14 días ininterrumpidos en '$habitTitle'. Tu disciplina y fuerza de voluntad están en su punto más alto.",
+                iconName = "shield",
+                primaryColorHex = "#06B6D4",
+                secondaryColorHex = "#3B82F6"
+            )
+            21 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 21,
+                xpBonus = 250,
+                title = "¡Hábito Forjado!",
+                message = "¡21 días de constancia en '$habitTitle'! La ciencia del comportamiento afirma que la rutina ya es parte de tu identidad.",
+                iconName = "psychology",
+                primaryColorHex = "#8B5CF6",
+                secondaryColorHex = "#EC4899"
+            )
+            30 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 30,
+                xpBonus = 400,
+                title = "¡Mes Maestro de Disciplina!",
+                message = "¡30 días invicto en '$habitTitle'! Has alcanzado la maestría de constancia del club élite.",
+                iconName = "workspace_premium",
+                primaryColorHex = "#EC4899",
+                secondaryColorHex = "#F43F5E"
+            )
+            50 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 50,
+                xpBonus = 600,
+                title = "¡Titán del Hábito!",
+                message = "¡50 días imparables en '$habitTitle'! Una hazaña de constancia legendaria.",
+                iconName = "diamond",
+                primaryColorHex = "#10B981",
+                secondaryColorHex = "#06B6D4"
+            )
+            100 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 100,
+                xpBonus = 1200,
+                title = "¡Centurión Inmortal!",
+                message = "¡100 días de excelencia en '$habitTitle'! Has forjado una transformación permanente.",
+                iconName = "stars",
+                primaryColorHex = "#F59E0B",
+                secondaryColorHex = "#EAB308"
+            )
+            else -> if (streakDays > 0 && streakDays % 50 == 0) {
+                StreakMilestoneEvent(
+                    habitId = habitId,
+                    habitTitle = habitTitle,
+                    streakDays = streakDays,
+                    xpBonus = streakDays * 10,
+                    title = "¡Hito Épico de $streakDays Días!",
+                    message = "¡Racha extraordinaria de $streakDays días seguidos en '$habitTitle'!",
+                    iconName = "stars",
+                    primaryColorHex = "#10B981",
+                    secondaryColorHex = "#6366F1"
+                )
+            } else {
+                null
+            }
+        }
+    }
+}
+
 val AllBadges = listOf(
     Badge(
         id = "first_step",

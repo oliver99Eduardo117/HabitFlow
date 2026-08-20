@@ -3,7 +3,11 @@ package com.example.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +33,7 @@ import com.example.model.Habit
 import com.example.model.HabitLog
 import com.example.model.ThemeMode
 import com.example.util.DateUtils
+import com.example.util.WeeklySuccessStats
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,9 +57,22 @@ fun AnalyticsScreen(
     var exportType by remember { mutableStateOf("JSON") }
     var isCloudSynced by remember { mutableStateOf(true) }
 
-    val past7Days = remember { DateUtils.getPastNDaysDateStrings(7) }
-    val logsByDate = remember(allLogs) { allLogs.groupBy { it.date } }
-    val totalActive = maxOf(1, habits.size)
+    // Calculate real-time weekly success rate and analytics
+    val weeklyStats = remember(habits, allLogs) {
+        DateUtils.calculateWeeklySuccessRate(habits, allLogs)
+    }
+
+    val animatedOverallPercentage by animateIntAsState(
+        targetValue = weeklyStats.overallPercentage,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
+        label = "weekly_percentage"
+    )
+
+    val animatedProgressFraction by animateFloatAsState(
+        targetValue = weeklyStats.overallPercentage / 100f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
+        label = "progress_fraction"
+    )
 
     Column(
         modifier = modifier
@@ -124,27 +143,197 @@ fun AnalyticsScreen(
             }
         }
 
-        // Weekly Consistency Bar Chart
+        // Weekly Success Rate & Consistency Visual Analysis Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("weekly_success_rate_card"),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = CardDefaults.outlinedCardBorder()
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = "Tendencia de los Últimos 7 Días",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Rendimiento y completitud diaria",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Porcentaje de Éxito Semanal",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Efectividad en los últimos 7 días",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
+                    // Delta comparison badge with previous week
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = when {
+                            weeklyStats.percentageDelta > 0 -> Color(0xFF10B981).copy(alpha = 0.15f)
+                            weeklyStats.percentageDelta < 0 -> Color(0xFFF43F5E).copy(alpha = 0.15f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = when {
+                                    weeklyStats.percentageDelta > 0 -> Icons.Default.TrendingUp
+                                    weeklyStats.percentageDelta < 0 -> Icons.Default.TrendingDown
+                                    else -> Icons.Default.TrendingFlat
+                                },
+                                contentDescription = null,
+                                tint = when {
+                                    weeklyStats.percentageDelta > 0 -> Color(0xFF10B981)
+                                    weeklyStats.percentageDelta < 0 -> Color(0xFFF43F5E)
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = when {
+                                    weeklyStats.percentageDelta > 0 -> "+${weeklyStats.percentageDelta}%"
+                                    weeklyStats.percentageDelta < 0 -> "${weeklyStats.percentageDelta}%"
+                                    else -> "0%"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    weeklyStats.percentageDelta > 0 -> Color(0xFF10B981)
+                                    weeklyStats.percentageDelta < 0 -> Color(0xFFF43F5E)
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Hero Circular Progress Gauge & Summary Metrics
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Circular Progress Gauge
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(100.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { animatedProgressFraction },
+                            modifier = Modifier.fillMaxSize(),
+                            strokeWidth = 10.dp,
+                            strokeCap = StrokeCap.Round,
+                            color = when {
+                                animatedOverallPercentage >= 80 -> Color(0xFF10B981)
+                                animatedOverallPercentage >= 50 -> Color(0xFF6366F1)
+                                animatedOverallPercentage > 0 -> Color(0xFFF59E0B)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$animatedOverallPercentage%",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.testTag("weekly_success_percentage")
+                            )
+                            Text(
+                                text = "Éxito",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Key Metrics Column
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Metric 1: Completions
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                Text("Completados:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                "${weeklyStats.totalCompletions} de ${weeklyStats.totalScheduled}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Metric 2: Perfect Days
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.Stars, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                                Text("Días Perfectos:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                "${weeklyStats.perfectDaysCount} de 7",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Metric 3: Best Day
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Color(0xFF6366F1), modifier = Modifier.size(16.dp))
+                                Text("Mejor Día:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                weeklyStats.bestDayLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(16.dp))
 
+                Text(
+                    text = "Desglose Diario de Rendimiento",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Daily Breakdown Bars
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -152,58 +341,59 @@ fun AnalyticsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    past7Days.forEach { dateStr ->
-                        val count = logsByDate[dateStr]?.size ?: 0
-                        val ratio = (count.toFloat() / totalActive).coerceIn(0f, 1f)
-                        val dayOfWeekNum = DateUtils.getDayOfWeek(dateStr)
-                        val dayLabel = when (dayOfWeekNum) {
-                            1 -> "L"
-                            2 -> "M"
-                            3 -> "X"
-                            4 -> "J"
-                            5 -> "V"
-                            6 -> "S"
-                            else -> "D"
-                        }
+                    weeklyStats.dailyBreakdown.forEach { day ->
+                        val ratio = (day.successRate / 100f).coerceIn(0f, 1f)
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Bottom,
                             modifier = Modifier.weight(1f)
                         ) {
+                            // Completion Rate or Ratio Text
                             Text(
-                                text = "$count",
+                                text = "${day.successRate.toInt()}%",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (day.successRate >= 100f) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
 
+                            // Vertical Progress Bar
                             Box(
                                 modifier = Modifier
-                                    .width(24.dp)
+                                    .width(22.dp)
                                     .height((ratio * 80).coerceAtLeast(6f).dp)
                                     .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
                                     .background(
-                                        if (ratio >= 1f) Color(0xFF10B981)
-                                        else if (ratio > 0.5f) Color(0xFF6366F1)
-                                        else if (ratio > 0f) Color(0xFFF59E0B)
-                                        else MaterialTheme.colorScheme.surfaceVariant
+                                        when {
+                                            day.successRate >= 100f -> Brush.verticalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
+                                            day.successRate >= 60f -> Brush.verticalGradient(listOf(Color(0xFF6366F1), Color(0xFF4F46E5)))
+                                            day.successRate > 0f -> Brush.verticalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
+                                            else -> Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.surfaceVariant))
+                                        }
                                     )
                             )
 
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
-                                text = dayLabel,
+                                text = day.dayLabel,
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = if (day.successRate >= 100f) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                 }
             }
         }
+
+        // Monthly Compliance Trend Line Chart Component
+        MonthlyTrendLineChart(
+            habits = habits,
+            allLogs = allLogs
+        )
 
         // Theme & Visual Appearance Setting Card
         Card(

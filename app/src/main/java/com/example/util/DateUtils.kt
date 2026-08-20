@@ -1,5 +1,7 @@
 package com.example.util
 
+import com.example.model.Habit
+import com.example.model.HabitLog
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -206,7 +208,280 @@ object DateUtils {
             else -> "${safeMinutes} min"
         }
     }
+
+    /**
+     * Calculates the weekly success rate, daily breakdown, and comparison metrics for the past 7 days.
+     */
+    fun calculateWeeklySuccessRate(
+        habits: List<Habit>,
+        allLogs: List<HabitLog>,
+        past7Days: List<String> = getPastNDaysDateStrings(7)
+    ): WeeklySuccessStats {
+        val previous7Days = getPastNDaysDateStrings(14).take(7)
+        val logsByDateAndHabit = allLogs.groupBy { it.date }
+        val habitsById = habits.associateBy { it.id }
+
+        val dailyBreakdown = past7Days.map { dateStr ->
+            val dayOfWeekNum = getDayOfWeek(dateStr) // 1=Mon .. 7=Sun
+            val dayLabel = when (dayOfWeekNum) {
+                1 -> "Lun"
+                2 -> "Mar"
+                3 -> "Mié"
+                4 -> "Jue"
+                5 -> "Vie"
+                6 -> "Sáb"
+                else -> "Dom"
+            }
+            val fullDayName = when (dayOfWeekNum) {
+                1 -> "Lunes"
+                2 -> "Martes"
+                3 -> "Miércoles"
+                4 -> "Jueves"
+                5 -> "Viernes"
+                6 -> "Sábado"
+                else -> "Domingo"
+            }
+
+            // Scheduled habits for this day (based on frequencyDays or all active if frequencyDays is empty)
+            val scheduledHabits = habits.filter { habit ->
+                habit.frequencyDays.isEmpty() || habit.frequencyDays.contains(dayOfWeekNum)
+            }
+            val scheduledCount = maxOf(1, scheduledHabits.size)
+
+            val dateLogs = logsByDateAndHabit[dateStr] ?: emptyList()
+            val completedCount = dateLogs.count { log ->
+                val habit = habitsById[log.habitId]
+                habit != null && log.value >= habit.targetValue
+            }
+
+            val successRate = if (scheduledHabits.isNotEmpty()) {
+                (completedCount.toFloat() / scheduledCount * 100f).coerceIn(0f, 100f)
+            } else if (completedCount > 0) {
+                100f
+            } else {
+                0f
+            }
+
+            DaySuccessData(
+                dateString = dateStr,
+                dayLabel = dayLabel,
+                fullDayName = fullDayName,
+                dayOfWeekNum = dayOfWeekNum,
+                completedCount = completedCount,
+                scheduledCount = scheduledCount,
+                successRate = successRate
+            )
+        }
+
+        val totalCompletions = dailyBreakdown.sumOf { it.completedCount }
+        val totalScheduled = dailyBreakdown.sumOf { it.scheduledCount }
+        val overallPercentage = if (totalScheduled > 0 && habits.isNotEmpty()) {
+            ((totalCompletions.toFloat() / totalScheduled) * 100f).toInt().coerceIn(0, 100)
+        } else {
+            0
+        }
+
+        val perfectDaysCount = dailyBreakdown.count { it.successRate >= 100f && it.completedCount > 0 }
+        val bestDay = dailyBreakdown.filter { it.completedCount > 0 }.maxByOrNull { it.successRate }
+        val bestDayLabel = bestDay?.fullDayName ?: if (dailyBreakdown.isNotEmpty()) dailyBreakdown.last().fullDayName else "N/A"
+        val bestDayPercentage = bestDay?.successRate?.toInt() ?: 0
+
+        // Calculate previous 7 days percentage
+        var prevCompletions = 0
+        var prevScheduled = 0
+        previous7Days.forEach { dateStr ->
+            val dayOfWeekNum = getDayOfWeek(dateStr)
+            val scheduledCount = maxOf(1, habits.count { it.frequencyDays.isEmpty() || it.frequencyDays.contains(dayOfWeekNum) })
+            val completedCount = logsByDateAndHabit[dateStr]?.count { log ->
+                val habit = habitsById[log.habitId]
+                habit != null && log.value >= habit.targetValue
+            } ?: 0
+            prevCompletions += completedCount
+            prevScheduled += scheduledCount
+        }
+        val previousWeekPercentage = if (prevScheduled > 0 && habits.isNotEmpty()) {
+            ((prevCompletions.toFloat() / prevScheduled) * 100f).toInt().coerceIn(0, 100)
+        } else {
+            0
+        }
+        val percentageDelta = overallPercentage - previousWeekPercentage
+
+        return WeeklySuccessStats(
+            overallPercentage = overallPercentage,
+            totalCompletions = totalCompletions,
+            totalScheduled = totalScheduled,
+            perfectDaysCount = perfectDaysCount,
+            bestDayLabel = bestDayLabel,
+            bestDayPercentage = bestDayPercentage,
+            previousWeekPercentage = previousWeekPercentage,
+            percentageDelta = percentageDelta,
+            dailyBreakdown = dailyBreakdown
+        )
+    }
+
+    /**
+     * Calculates the monthly compliance trend data points for a line chart visualization.
+     */
+    fun calculateMonthlyTrend(
+        habits: List<Habit>,
+        allLogs: List<HabitLog>,
+        calendar: Calendar = Calendar.getInstance(),
+        filterHabitId: Long? = null
+    ): MonthlyTrendStats {
+        val targetHabits = if (filterHabitId != null) {
+            habits.filter { it.id == filterHabitId }
+        } else {
+            habits
+        }
+
+        val habitsById = targetHabits.associateBy { it.id }
+        val logsByDate = allLogs
+            .filter { filterHabitId == null || it.habitId == filterHabitId }
+            .groupBy { it.date }
+
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH)
+        val monthTitle = formatMonthYear(calendar)
+
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+        val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val todayStr = getTodayDateString()
+
+        val dataPoints = mutableListOf<MonthlyTrendDataPoint>()
+        var sumRate = 0f
+        var elapsedDaysCount = 0
+        var totalCompletions = 0
+        var totalScheduled = 0
+        var peakRate = 0f
+        var peakDay = 1
+        var lowestRate = 100f
+
+        for (day in 1..maxDays) {
+            cal.set(Calendar.DAY_OF_MONTH, day)
+            val dateStr = isoFormat.format(cal.time)
+            val isToday = (dateStr == todayStr)
+            val isFuture = dateStr > todayStr
+            val dayOfWeekNum = getDayOfWeek(dateStr)
+
+            val scheduledForDay = if (targetHabits.isEmpty()) {
+                0
+            } else {
+                targetHabits.count { it.frequencyDays.isEmpty() || it.frequencyDays.contains(dayOfWeekNum) }
+            }
+
+            val completedForDay = logsByDate[dateStr]?.count { log ->
+                val habit = habitsById[log.habitId]
+                habit != null && log.value >= habit.targetValue
+            } ?: 0
+
+            val rate = if (scheduledForDay > 0) {
+                ((completedForDay.toFloat() / scheduledForDay) * 100f).coerceIn(0f, 100f)
+            } else {
+                0f
+            }
+
+            dataPoints.add(
+                MonthlyTrendDataPoint(
+                    dayNumber = day,
+                    dateString = dateStr,
+                    dayOfWeek = dayOfWeekNum,
+                    completedCount = completedForDay,
+                    scheduledCount = scheduledForDay,
+                    completionRate = rate,
+                    isFuture = isFuture,
+                    isToday = isToday
+                )
+            )
+
+            if (!isFuture) {
+                elapsedDaysCount++
+                sumRate += rate
+                totalCompletions += completedForDay
+                totalScheduled += scheduledForDay
+                if (rate >= peakRate) {
+                    peakRate = rate
+                    peakDay = day
+                }
+                if (rate < lowestRate) {
+                    lowestRate = rate
+                }
+            }
+        }
+
+        val averageRate = if (elapsedDaysCount > 0) {
+            sumRate / elapsedDaysCount
+        } else {
+            0f
+        }
+
+        if (lowestRate > 100f) lowestRate = 0f
+
+        return MonthlyTrendStats(
+            monthName = monthTitle,
+            year = year,
+            month = month,
+            dataPoints = dataPoints,
+            averageRate = averageRate,
+            peakRate = peakRate,
+            peakDay = peakDay,
+            lowestRate = lowestRate,
+            totalCompletions = totalCompletions,
+            totalScheduled = totalScheduled,
+            hasData = targetHabits.isNotEmpty() && elapsedDaysCount > 0
+        )
+    }
 }
+
+data class MonthlyTrendDataPoint(
+    val dayNumber: Int,
+    val dateString: String,
+    val dayOfWeek: Int,
+    val completedCount: Int,
+    val scheduledCount: Int,
+    val completionRate: Float, // 0f..100f
+    val isFuture: Boolean,
+    val isToday: Boolean
+)
+
+data class MonthlyTrendStats(
+    val monthName: String,
+    val year: Int,
+    val month: Int,
+    val dataPoints: List<MonthlyTrendDataPoint>,
+    val averageRate: Float,
+    val peakRate: Float,
+    val peakDay: Int,
+    val lowestRate: Float,
+    val totalCompletions: Int,
+    val totalScheduled: Int,
+    val hasData: Boolean
+)
+
+data class DaySuccessData(
+    val dateString: String,
+    val dayLabel: String,
+    val fullDayName: String,
+    val dayOfWeekNum: Int,
+    val completedCount: Int,
+    val scheduledCount: Int,
+    val successRate: Float // 0f..100f
+)
+
+data class WeeklySuccessStats(
+    val overallPercentage: Int, // 0..100
+    val totalCompletions: Int,
+    val totalScheduled: Int,
+    val perfectDaysCount: Int,
+    val bestDayLabel: String,
+    val bestDayPercentage: Int,
+    val previousWeekPercentage: Int,
+    val percentageDelta: Int, // positive or negative
+    val dailyBreakdown: List<DaySuccessData>
+)
 
 data class CalendarDay(
     val dayNumber: Int,

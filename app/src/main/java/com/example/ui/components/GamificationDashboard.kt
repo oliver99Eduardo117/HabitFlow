@@ -1,8 +1,15 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +43,7 @@ import com.example.model.Badge
 import com.example.model.GamificationConfig
 import com.example.model.LevelTier
 import com.example.model.UserStats
+import com.example.util.IconHelper
 
 @Composable
 fun GamificationDashboard(
@@ -51,7 +61,10 @@ fun GamificationDashboard(
 
     val animatedProgress by animateFloatAsState(
         targetValue = levelProgress.progressFraction,
-        animationSpec = tween(durationMillis = 800),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "xp_progress"
     )
 
@@ -265,28 +278,28 @@ fun GamificationDashboard(
             StatCard(
                 title = "Check-ins",
                 value = "${userStats.totalCheckIns}",
-                icon = "🎯",
+                icon = Icons.Default.TrackChanges,
                 color = Color(0xFF6366F1),
                 modifier = Modifier.weight(1f)
             )
             StatCard(
                 title = "Mejor Racha",
                 value = "${userStats.bestStreakAllTime}d",
-                icon = "🔥",
+                icon = Icons.Default.LocalFireDepartment,
                 color = Color(0xFFF97316),
                 modifier = Modifier.weight(1f)
             )
             StatCard(
                 title = "Enfoque",
                 value = "${userStats.totalFocusMinutes}m",
-                icon = "⏳",
+                icon = Icons.Default.Timer,
                 color = Color(0xFF06B6D4),
                 modifier = Modifier.weight(1f)
             )
             StatCard(
                 title = "Insignias",
                 value = "${userStats.unlockedBadgeIds.size}/${AllBadges.size}",
-                icon = "🎖️",
+                icon = Icons.Default.WorkspacePremium,
                 color = Color(0xFFF59E0B),
                 modifier = Modifier.weight(1f)
             )
@@ -366,7 +379,12 @@ fun GamificationDashboard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🔥", fontSize = 18.sp)
+                        Icon(
+                            imageVector = Icons.Default.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = if (userStats.isHardcoreMode) Color(0xFFF43F5E) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Modo Hardcore (+25% XP)",
@@ -465,10 +483,32 @@ fun GamificationDashboard(
                                     .background(if (isUnlocked) Color(0xFFF59E0B).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = if (isUnlocked) "🏆" else "🔒",
-                                    fontSize = 22.sp
-                                )
+                                AnimatedContent(
+                                    targetState = isUnlocked,
+                                    transitionSpec = {
+                                        (fadeIn() + scaleIn(
+                                            animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy),
+                                            initialScale = 0.5f
+                                        )) togetherWith (fadeOut() + scaleOut(targetScale = 0.5f))
+                                    },
+                                    label = "badge_icon_anim"
+                                ) { unlocked ->
+                                    if (unlocked) {
+                                        Icon(
+                                            imageVector = IconHelper.getIconByName(badge.icon),
+                                            contentDescription = badge.title,
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = "Insignia bloqueada",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
                             }
 
                             Spacer(modifier = Modifier.width(14.dp))
@@ -639,15 +679,26 @@ fun LevelRoadmapDialog(
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = when {
-                                        isCompleted -> "✓"
-                                        isCurrent -> "▶"
-                                        else -> "🔒"
-                                    },
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isCompleted) Color(0xFF10B981) else tierColor
-                                )
+                                when {
+                                    isCompleted -> Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Nivel completado",
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    isCurrent -> Icon(
+                                        imageVector = IconHelper.getIconByName(tier.iconName),
+                                        contentDescription = "Nivel actual",
+                                        tint = tierColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    else -> Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Nivel bloqueado",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.width(12.dp))
@@ -724,35 +775,35 @@ fun XpRewardsGuideDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 XpRuleItem(
-                    emoji = "🎯",
+                    icon = Icons.Default.TrackChanges,
                     title = "Check-in Diario de Hábito",
                     xp = "+25 XP",
                     description = "Por cada hábito completado en su día programado."
                 )
 
                 XpRuleItem(
-                    emoji = "🚀",
+                    icon = Icons.AutoMirrored.Filled.TrendingUp,
                     title = "Superar Meta Cuantitativa",
                     xp = "+15 XP Bonus",
                     description = "Cuando registras un valor superior al objetivo establecido."
                 )
 
                 XpRuleItem(
-                    emoji = "✅",
+                    icon = Icons.Default.CheckCircle,
                     title = "Sub-tarea / Mini Hito",
                     xp = "+5 XP",
                     description = "Por cada paso o subtarea completada dentro de tu rutina."
                 )
 
                 XpRuleItem(
-                    emoji = "⏳",
+                    icon = Icons.Default.Timer,
                     title = "Sesión de Enfoque Pomodoro",
                     xp = "+2 XP / min",
                     description = "Gana experiencia por cada minuto de concentración profunda activa."
                 )
 
                 XpRuleItem(
-                    emoji = "🔥",
+                    icon = Icons.Default.LocalFireDepartment,
                     title = "Modo Hardcore Activo",
                     xp = "+25% XP Total",
                     description = "Multiplicador del 25% extra en todas las acciones para usuarios de alta disciplina."
@@ -769,7 +820,7 @@ fun XpRewardsGuideDialog(
 
 @Composable
 private fun XpRuleItem(
-    emoji: String,
+    icon: ImageVector,
     title: String,
     xp: String,
     description: String
@@ -784,7 +835,12 @@ private fun XpRuleItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = emoji, fontSize = 24.sp)
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(

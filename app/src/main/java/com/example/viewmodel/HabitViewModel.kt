@@ -72,6 +72,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     private val _xpGainedEvent = MutableSharedFlow<Int>(extraBufferCapacity = 1)
     val xpGainedEvent: SharedFlow<Int> = _xpGainedEvent.asSharedFlow()
 
+    private val _streakMilestoneEvent = MutableSharedFlow<StreakMilestoneEvent>(extraBufferCapacity = 1)
+    val streakMilestoneEvent: SharedFlow<StreakMilestoneEvent> = _streakMilestoneEvent.asSharedFlow()
+
     val themeMode: StateFlow<ThemeMode> = themePrefs.themeMode
     val dynamicColor: StateFlow<Boolean> = themePrefs.dynamicColor
 
@@ -265,10 +268,15 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleHabitCompletion(habitId: Long, date: String = _uiState.value.selectedDate) {
         viewModelScope.launch {
             val gainedXp = repository.toggleHabitCompletion(habitId, date)
+            val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
             val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP 🔥" else "Hábito desmarcado"
             _uiState.update { it.copy(snackbarMessage = message) }
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
+            }
+            if (milestone != null) {
+                _streakMilestoneEvent.tryEmit(milestone)
+                _xpGainedEvent.tryEmit(milestone.xpBonus)
             }
             triggerHaptic()
         }
@@ -277,10 +285,15 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun recordQuantitativeProgress(habitId: Long, value: Float, notes: String = "") {
         viewModelScope.launch {
             val gainedXp = repository.recordHabitProgress(habitId, _uiState.value.selectedDate, value, notes)
+            val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
             val bonusText = if (gainedXp > 0) " +$gainedXp XP" else ""
             _uiState.update { it.copy(snackbarMessage = "Progreso registrado$bonusText") }
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
+            }
+            if (milestone != null) {
+                _streakMilestoneEvent.tryEmit(milestone)
+                _xpGainedEvent.tryEmit(milestone.xpBonus)
             }
             triggerHaptic()
         }

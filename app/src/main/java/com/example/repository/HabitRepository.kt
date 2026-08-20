@@ -320,6 +320,31 @@ class HabitRepository(
         userStatsDao.insertOrUpdate(finalStats)
     }
 
+    /**
+     * Checks if the current streak for a given habit has reached a gamification milestone (e.g. 3, 7, 14, 21, 30 days).
+     * If so, awards bonus milestone XP and returns the StreakMilestoneEvent.
+     */
+    suspend fun checkStreakMilestone(habitId: Long): StreakMilestoneEvent? = withContext(Dispatchers.IO) {
+        val habit = habitDao.getHabitById(habitId) ?: return@withContext null
+        val logs = habitLogDao.getLogsForHabit(habitId).first()
+        val completedDates = logs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
+        val (currentStreak, _) = DateUtils.calculateStreak(completedDates)
+
+        val milestone = StreakMilestones.getMilestone(habitId, habit.title, currentStreak)
+        if (milestone != null) {
+            val currentStats = userStatsDao.getUserStats() ?: UserStats()
+            val bonus = if (currentStats.isHardcoreMode) {
+                (milestone.xpBonus * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+            } else {
+                milestone.xpBonus
+            }
+            val newXp = currentStats.xp + bonus
+            val newLevel = GamificationConfig.calculateLevel(newXp)
+            checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+        }
+        milestone
+    }
+
     suspend fun addFocusSession(minutes: Int) = withContext(Dispatchers.IO) {
         val stats = userStatsDao.getUserStats() ?: UserStats()
         var earnedXp = minutes * GamificationConfig.XP_FOCUS_PER_MINUTE
