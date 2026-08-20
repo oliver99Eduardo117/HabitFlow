@@ -38,7 +38,6 @@ class StreakWidget : GlanceAppWidget() {
 
         val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
         val hasActiveStreak = topStreakHabit != null && topStreakHabit.currentStreak > 0
-        val totalWithStreak = habitsWithStats.count { it.currentStreak > 0 }
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -49,13 +48,14 @@ class StreakWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(18.dp)
-                    .background(ColorProvider(WidgetColors.CardSurface))
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .cornerRadius(16.dp)
+                    .background(ColorProvider(WidgetColors.Surface))
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .clickable(actionStartActivity(mainIntent)),
                 contentAlignment = Alignment.Center
             ) {
                 if (hasActiveStreak && topStreakHabit != null) {
+                    // Normal state: habit name (11sp) -> streak number (32sp bold) -> "días" (11sp) -> flame (17dp)
                     Column(
                         modifier = GlanceModifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -67,84 +67,65 @@ class StreakWidget : GlanceAppWidget() {
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextSecondary),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
+                                fontWeight = FontWeight.Normal,
+                                textAlign = TextAlign.Center
+                            )
+                        )
+
+                        Spacer(modifier = GlanceModifier.height(2.dp))
+
+                        Text(
+                            text = "${topStreakHabit.currentStreak}",
+                            style = TextStyle(
+                                color = ColorProvider(WidgetColors.TextPrimary),
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                        )
+
+                        Spacer(modifier = GlanceModifier.height(2.dp))
+
+                        Text(
+                            text = "días",
+                            style = TextStyle(
+                                color = ColorProvider(WidgetColors.TextSecondary),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal,
                                 textAlign = TextAlign.Center
                             )
                         )
 
                         Spacer(modifier = GlanceModifier.height(3.dp))
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Image(
-                                provider = ImageProvider(R.drawable.ic_widget_flame),
-                                contentDescription = "Racha",
-                                modifier = GlanceModifier.size(28.dp)
-                            )
-                            Spacer(modifier = GlanceModifier.width(4.dp))
-                            Text(
-                                text = "${topStreakHabit.currentStreak}",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.Amber),
-                                    fontSize = 30.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                        }
-
-                        Spacer(modifier = GlanceModifier.height(2.dp))
-
-                        Text(
-                            text = if (topStreakHabit.currentStreak == 1) "día de racha" else "días de racha",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextPrimary),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
+                        Image(
+                            provider = ImageProvider(R.drawable.ic_widget_flame),
+                            contentDescription = "Racha",
+                            modifier = GlanceModifier.size(17.dp)
                         )
-
-                        if (totalWithStreak > 1) {
-                            Spacer(modifier = GlanceModifier.height(3.dp))
-                            Text(
-                                text = "$totalWithStreak hábitos con racha",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.TextMuted),
-                                    fontSize = 10.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                            )
-                        }
                     }
                 } else {
+                    // Empty state: flame (20dp, muted) -> 8dp -> "Completa un hábito para empezar tu racha" (11.5sp)
                     Column(
                         modifier = GlanceModifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Image(
-                            provider = ImageProvider(R.drawable.ic_widget_flame),
-                            contentDescription = "Racha",
-                            modifier = GlanceModifier.size(26.dp)
+                            provider = ImageProvider(R.drawable.ic_widget_flame_muted),
+                            contentDescription = "Sin racha activa",
+                            modifier = GlanceModifier.size(20.dp)
                         )
-                        Spacer(modifier = GlanceModifier.height(4.dp))
+
+                        Spacer(modifier = GlanceModifier.height(8.dp))
+
                         Text(
-                            text = "¡Inicia tu racha hoy!",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.Amber),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                        )
-                        Spacer(modifier = GlanceModifier.height(2.dp))
-                        Text(
-                            text = "Completa tus hábitos diarios",
+                            text = "Completa un hábito para empezar tu racha",
+                            maxLines = 2,
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextSecondary),
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal,
                                 textAlign = TextAlign.Center
                             )
                         )
@@ -154,4 +135,5 @@ class StreakWidget : GlanceAppWidget() {
         }
     }
 }
+
 

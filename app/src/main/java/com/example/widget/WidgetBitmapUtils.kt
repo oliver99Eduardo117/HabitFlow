@@ -4,22 +4,20 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.Color
 
 object WidgetBitmapUtils {
 
     /**
-     * Creates a smooth, crisp circular progress ring bitmap for Glance AppWidgets.
-     * Replaces the indeterminate CircularProgressIndicator spinner with a determinate ring.
+     * Creates a smooth circular progress ring bitmap for DailyProgressWidget.
+     * Track: Color(0xFF334155) (DarkSurfaceVariant), Progress: #6366F1 (Indigo), StrokeCap.Round.
      */
     fun createProgressRingBitmap(
         percentage: Int,
-        sizePx: Int = 180,
+        sizePx: Int = 210,
         strokeWidthPx: Float = 18f,
         trackColorInt: Int = 0xFF334155.toInt(),
         progressColorInt: Int = 0xFF6366F1.toInt(),
-        completedColorInt: Int = 0xFF10B981.toInt()
+        completedColorInt: Int = 0xFF6366F1.toInt()
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -58,17 +56,17 @@ object WidgetBitmapUtils {
     }
 
     /**
-     * Creates a crisp Heatmap Grid Bitmap for Glance AppWidgets.
-     * Renders exact columns x rows with proportional spacing, corner radius and explicit 4-bucket color interpolation.
+     * Creates a crisp Heatmap Grid Bitmap for ConsistencyWidget.
+     * 5 columns (weeks) x 7 rows (days per week, top-to-bottom chronological), 4 exact intensity levels.
      */
     fun createHeatmapGridBitmap(
-        dailyRatios: List<Float>, // chronological list of ratios (0f..1f)
-        columns: Int,
-        rows: Int,
-        widthPx: Int = 400,
-        heightPx: Int = 160,
+        dailyRatios: List<Float>, // 35 chronological ratios (oldest to today)
+        columns: Int = 5,
+        rows: Int = 7,
+        widthPx: Int = 420,
+        heightPx: Int = 210,
         gapPx: Float = 6f,
-        cornerRadiusPx: Float = 5f
+        cornerRadiusPx: Float = 4f
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -91,16 +89,15 @@ object WidgetBitmapUtils {
             style = Paint.Style.FILL
         }
 
-        var dataIndex = 0
         for (col in 0 until columns) {
             val left = startX + col * (cellSize + gapPx)
             for (row in 0 until rows) {
                 val top = startY + row * (cellSize + gapPx)
+                val dataIndex = col * rows + row
                 val ratio = if (dataIndex < dailyRatios.size) dailyRatios[dataIndex] else 0f
-                dataIndex++
 
-                val colorInt = WidgetColors.interpolateHeatmapColorInt(ratio)
-                paint.color = colorInt
+                // Exact 4 levels: 0%, 1-33%, 34-66%, 67-100%
+                paint.color = WidgetColors.getHeatmapColorInt(ratio)
                 val rect = RectF(left, top, left + cellSize, top + cellSize)
                 canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, paint)
             }
@@ -109,3 +106,4 @@ object WidgetBitmapUtils {
         return bitmap
     }
 }
+

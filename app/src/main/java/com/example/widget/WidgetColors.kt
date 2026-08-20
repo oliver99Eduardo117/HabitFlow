@@ -1,91 +1,75 @@
 package com.example.widget
 
 import androidx.compose.ui.graphics.Color
+import com.example.ui.theme.BrandAccent
+import com.example.ui.theme.BrandAmber
+import com.example.ui.theme.BrandPrimary
+import com.example.ui.theme.DarkBackground
+import com.example.ui.theme.DarkOnSurface
+import com.example.ui.theme.DarkOnSurfaceVariant
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
 
 object WidgetColors {
-    val Background = Color(0xFF0F172A)
-    val CardSurface = Color(0xFF1E293B)
-    val SurfaceVariant = Color(0xFF334155)
-    val Border = Color(0xFF334155)
+    // Shared widget surface token: DarkSurface (#1E293B) at ~90% opacity (0xE61E293B)
+    val Surface = Color(0xE61E293B)
+    val CardSurface = Surface
+    val Background = DarkBackground
+    val SurfaceVariant = DarkSurfaceVariant
 
-    val Indigo = Color(0xFF6366F1)
-    val Cyan = Color(0xFF06B6D4)
-    val Rose = Color(0xFFF43F5E)
-    val Emerald = Color(0xFF10B981)
-    val Amber = Color(0xFFF59E0B)
-    val Purple = Color(0xFF8B5CF6)
+    // Typography tokens
+    val TextPrimary = DarkOnSurface // #F1F5F9
+    val TextSecondary = DarkOnSurfaceVariant // #94A3B8
+    val MutedText = Color(0xFF64748B)
+    val TextMuted = MutedText
 
-    val TextPrimary = Color(0xFFFFFFFF)
-    val TextSecondary = Color(0xFF94A3B8)
-    val TextMuted = Color(0xFF64748B)
+    // Accent tokens
+    val Emerald = BrandAccent // #10B981
+    val Amber = BrandAmber // #F59E0B
+    val Indigo = BrandPrimary // #6366F1
 
     // Visual feedback & flash animation colors
     val EmeraldGlow = Color(0xFF34D399)
-    val EmeraldBright = Color(0xFF10B981)
-    val FeedbackFlashBg = Color(0xFF065F46)
-    val FeedbackFlashBorder = Color(0xFF6EE7B7)
     val FeedbackUncheckFlash = Color(0xFF475569)
 
-    // Heatmap levels (Deep Emerald palette on Dark Slate)
-    val HeatmapEmpty = Color(0xFF334155)
-    val HeatmapLevel1 = Color(0xFF065F46)
-    val HeatmapLevel2 = Color(0xFF059669)
-    val HeatmapLevel3 = Color(0xFF10B981)
-    val HeatmapLevel4 = Color(0xFF34D399)
+    // Heatmap exact 4 intensity levels
+    // 0% -> Color(0xFF334155), 1-33% -> Color(0x5210B981), 34-66% -> Color(0x9E10B981), 67-100% -> #10B981
+    val HeatmapLevel0 = Color(0xFF334155) // 0%
+    val HeatmapLevel1 = Color(0x5210B981) // 1-33% (Emerald ~32% opacity)
+    val HeatmapLevel2 = Color(0x9E10B981) // 34-66% (Emerald ~62% opacity)
+    val HeatmapLevel3 = Color(0xFF10B981) // 67-100% (Emerald solid)
+
+    // Aliases
+    val HeatmapEmpty = HeatmapLevel0
+    val HeatmapLevel4 = HeatmapLevel3
 
     /**
-     * Maps a completion ratio (0.0f..1.0f) to the corresponding discrete intensity level or interpolated color.
+     * Maps a completion ratio (0.0f..1.0f) to the exact 4 intensity levels.
      */
-    fun getHeatmapColor(completedRatio: Float): Color {
-        val clamped = completedRatio.coerceIn(0f, 1f)
-        return when {
-            clamped <= 0f -> HeatmapEmpty
-            clamped <= 0.25f -> HeatmapLevel1
-            clamped <= 0.50f -> HeatmapLevel2
-            clamped <= 0.75f -> HeatmapLevel3
-            else -> HeatmapLevel4
-        }
-    }
-
-    /**
-     * Interpolates color across the 4 intensity buckets smoothly for high-fidelity canvas rendering.
-     */
-    fun interpolateHeatmapColorInt(ratio: Float): Int {
+    fun getHeatmapColor(ratio: Float): Color {
         val r = ratio.coerceIn(0f, 1f)
-        if (r <= 0f) return 0xFF334155.toInt()
         return when {
-            r <= 0.25f -> {
-                val fraction = r / 0.25f
-                lerpColorInt(0xFF065F46.toInt(), 0xFF059669.toInt(), fraction)
-            }
-            r <= 0.50f -> {
-                val fraction = (r - 0.25f) / 0.25f
-                lerpColorInt(0xFF059669.toInt(), 0xFF10B981.toInt(), fraction)
-            }
-            r <= 0.75f -> {
-                val fraction = (r - 0.50f) / 0.25f
-                lerpColorInt(0xFF10B981.toInt(), 0xFF34D399.toInt(), fraction)
-            }
-            else -> 0xFF34D399.toInt()
+            r <= 0f -> HeatmapLevel0
+            r <= 0.33f -> HeatmapLevel1
+            r <= 0.66f -> HeatmapLevel2
+            else -> HeatmapLevel3
         }
     }
 
-    private fun lerpColorInt(colorStart: Int, colorEnd: Int, fraction: Float): Int {
-        val f = fraction.coerceIn(0f, 1f)
-        val a = ((colorStart ushr 24 and 0xFF) + f * ((colorEnd ushr 24 and 0xFF) - (colorStart ushr 24 and 0xFF))).toInt()
-        val r = ((colorStart ushr 16 and 0xFF) + f * ((colorEnd ushr 16 and 0xFF) - (colorStart ushr 16 and 0xFF))).toInt()
-        val g = ((colorStart ushr 8 and 0xFF) + f * ((colorEnd ushr 8 and 0xFF) - (colorStart ushr 8 and 0xFF))).toInt()
-        val b = ((colorStart and 0xFF) + f * ((colorEnd and 0xFF) - (colorStart and 0xFF))).toInt()
-        return (a shl 24) or (r shl 16) or (g shl 8) or b
-    }
-
-    fun getHeatmapColorByCount(count: Int): Color {
+    /**
+     * Exact 4-level color Int mapping for canvas rendering without interpolation.
+     */
+    fun getHeatmapColorInt(ratio: Float): Int {
+        val r = ratio.coerceIn(0f, 1f)
         return when {
-            count <= 0 -> HeatmapEmpty
-            count == 1 -> HeatmapLevel1
-            count == 2 -> HeatmapLevel2
-            count == 3 -> HeatmapLevel3
-            else -> HeatmapLevel4
+            r <= 0f -> 0xFF334155.toInt()
+            r <= 0.33f -> 0x5210B981.toInt()
+            r <= 0.66f -> 0x9E10B981.toInt()
+            else -> 0xFF10B981.toInt()
         }
     }
+
+    fun interpolateHeatmapColorInt(ratio: Float): Int = getHeatmapColorInt(ratio)
 }
+
+

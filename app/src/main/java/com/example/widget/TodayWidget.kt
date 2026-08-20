@@ -53,7 +53,7 @@ class TodayWidget : GlanceAppWidget() {
         provideContent {
             val prefs = currentState<Preferences>()
 
-            // Prioritize uncompleted habits first, then completed ones up to 5 total
+            // Prioritize uncompleted habits first, then completed ones up to 4 total
             val uncompleted = allHabitsWithStats.filter { 
                 val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
                 val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
@@ -66,7 +66,14 @@ class TodayWidget : GlanceAppWidget() {
                 val isDone = localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
                 isDone
             }
-            val displayHabits = (uncompleted + completed).take(5)
+            val displayHabits = (uncompleted + completed).take(4)
+
+            val totalHabits = allHabitsWithStats.size
+            val completedCount = allHabitsWithStats.count { 
+                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
+                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
+                localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
+            }
 
             val mainIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -76,16 +83,16 @@ class TodayWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(18.dp)
-                    .background(ColorProvider(WidgetColors.CardSurface))
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .cornerRadius(16.dp)
+                    .background(ColorProvider(WidgetColors.Surface))
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .clickable(actionStartActivity(mainIntent))
             ) {
                 Column(
                     modifier = GlanceModifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Header
+                    // Header row: "Hoy" (13sp medium DarkOnSurface) ... "X de Y" (11sp mutedText)
                     Row(
                         modifier = GlanceModifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -93,28 +100,23 @@ class TodayWidget : GlanceAppWidget() {
                         Text(
                             text = "Hoy",
                             style = TextStyle(
-                                color = ColorProvider(WidgetColors.Indigo),
+                                color = ColorProvider(WidgetColors.TextPrimary),
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Medium
                             )
                         )
                         Spacer(modifier = GlanceModifier.defaultWeight())
-                        val completedCount = allHabitsWithStats.count { 
-                            val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                            val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                            localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-                        }
                         Text(
-                            text = "$completedCount/${allHabitsWithStats.size} completados",
+                            text = "$completedCount de $totalHabits",
                             style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextSecondary),
+                                color = ColorProvider(WidgetColors.MutedText),
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Normal
                             )
                         )
                     }
 
-                    Spacer(modifier = GlanceModifier.height(6.dp))
+                    Spacer(modifier = GlanceModifier.height(10.dp))
 
                     if (displayHabits.isEmpty()) {
                         Box(
@@ -122,21 +124,21 @@ class TodayWidget : GlanceAppWidget() {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Sin hábitos activos para hoy",
+                                text = "Sin hábitos para hoy",
                                 style = TextStyle(
                                     color = ColorProvider(WidgetColors.TextSecondary),
-                                    fontSize = 12.sp
+                                    fontSize = 11.sp
                                 )
                             )
                         }
                     } else {
                         Column(
-                            modifier = GlanceModifier.fillMaxSize(),
+                            modifier = GlanceModifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             displayHabits.forEachIndexed { index, item ->
                                 if (index > 0) {
-                                    Spacer(modifier = GlanceModifier.height(5.dp))
+                                    Spacer(modifier = GlanceModifier.height(10.dp))
                                 }
                                 HabitRowItem(item = item, prefs = prefs)
                             }
@@ -166,7 +168,7 @@ class TodayWidget : GlanceAppWidget() {
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox circle with visual flash feedback
+            // Checkbox circle: 22dp (Emerald solid if completed, SurfaceVariant if not)
             val checkColor = when {
                 isFlashing && isCompleted -> WidgetColors.EmeraldGlow
                 isFlashing && !isCompleted -> WidgetColors.FeedbackUncheckFlash
@@ -201,27 +203,27 @@ class TodayWidget : GlanceAppWidget() {
                 }
             }
 
-            Spacer(modifier = GlanceModifier.width(8.dp))
+            Spacer(modifier = GlanceModifier.width(12.dp))
 
-            // Habit title - Green when completed/marked, white when uncompleted
+            // Habit title: 14sp (DarkOnSurfaceVariant for completed, DarkOnSurface for uncompleted)
             Text(
                 text = item.habit.title,
                 maxLines = 1,
                 style = TextStyle(
                     color = ColorProvider(
                         if (isCompleted) {
-                            WidgetColors.EmeraldGlow
+                            WidgetColors.TextSecondary
                         } else {
                             WidgetColors.TextPrimary
                         }
                     ),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Normal
                 ),
                 modifier = GlanceModifier.defaultWeight()
             )
 
-            // Streak flame + count (if currentStreak > 0)
+            // Streak: flame + number in 13sp Amber if streak > 0, or dash "—" in 13sp mutedText if streak = 0
             val effectiveStreak = if (isCompleted && !item.isCompletedToday) {
                 item.currentStreak + 1
             } else if (!isCompleted && item.isCompletedToday) {
@@ -236,18 +238,28 @@ class TodayWidget : GlanceAppWidget() {
                     Image(
                         provider = ImageProvider(R.drawable.ic_widget_flame),
                         contentDescription = "Racha",
-                        modifier = GlanceModifier.size(13.dp)
+                        modifier = GlanceModifier.size(14.dp)
                     )
                     Spacer(modifier = GlanceModifier.width(2.dp))
                     Text(
                         text = "$effectiveStreak",
                         style = TextStyle(
                             color = ColorProvider(WidgetColors.Amber),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     )
                 }
+            } else {
+                Spacer(modifier = GlanceModifier.width(6.dp))
+                Text(
+                    text = "—",
+                    style = TextStyle(
+                        color = ColorProvider(WidgetColors.MutedText),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                )
             }
         }
     }
@@ -299,3 +311,4 @@ class ToggleHabitAction : ActionCallback {
         val currentCompletedKey = ActionParameters.Key<Boolean>("current_completed")
     }
 }
+

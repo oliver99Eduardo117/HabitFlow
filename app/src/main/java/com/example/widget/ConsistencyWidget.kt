@@ -21,7 +21,6 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.MainActivity
-import com.example.R
 import com.example.util.DateUtils
 import kotlinx.coroutines.flow.first
 
@@ -30,7 +29,7 @@ class ConsistencyWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val repository = WidgetRepositoryProvider.getRepository(context)
         
-        // 35 days = 5 weeks of 7 days
+        // 35 days = 5 weeks of 7 days (oldest to today)
         val past35Days = DateUtils.getPastNDaysDateStrings(35)
         
         val allLogs = try {
@@ -44,20 +43,11 @@ class ConsistencyWidget : GlanceAppWidget() {
             emptyList()
         }
 
-        val habitsWithStats = try {
-            val today = DateUtils.getTodayDateString()
-            repository.getHabitsWithStats(today).first()
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        val topStreak = habitsWithStats.maxOfOrNull { it.currentStreak } ?: 0
-
         val totalActive = maxOf(1, activeHabits.size)
         val activeHabitsById = activeHabits.associateBy { it.id }
         val logsByDate = allLogs.filter { past35Days.contains(it.date) }.groupBy { it.date }
 
-        // Compute exact completion intensity for each of the 35 days
+        // Compute exact completion ratio for each of the 35 days
         val dailyRatiosList = past35Days.map { dateStr ->
             val dayLogs = logsByDate[dateStr] ?: emptyList()
             val completedCount = dayLogs.count { log ->
@@ -73,18 +63,15 @@ class ConsistencyWidget : GlanceAppWidget() {
             }
         }
 
-        val activeDaysCount = dailyRatiosList.count { it > 0f }
-        val activePct = if (past35Days.isNotEmpty()) ((activeDaysCount.toFloat() / past35Days.size) * 100).toInt() else 0
-
-        // 35-day grid: 5 columns (weeks) x 7 rows (days), beautifully proportioned and sharp
+        // 35-day grid: 5 columns (weeks) x 7 rows (days), GitHub style orientation, 4 exact levels
         val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHeatmapGridBitmap(
             dailyRatios = dailyRatiosList,
             columns = 5,
             rows = 7,
-            widthPx = 520,
-            heightPx = 180,
-            gapPx = 8f,
-            cornerRadiusPx = 6f
+            widthPx = 420,
+            heightPx = 210,
+            gapPx = 6f,
+            cornerRadiusPx = 4f
         )
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
@@ -96,150 +83,55 @@ class ConsistencyWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(18.dp)
-                    .background(ColorProvider(WidgetColors.CardSurface))
-                    .padding(14.dp)
+                    .cornerRadius(16.dp)
+                    .background(ColorProvider(WidgetColors.Surface))
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .clickable(actionStartActivity(mainIntent))
             ) {
                 Column(
                     modifier = GlanceModifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Header
+                    // Header: "Constancia" (13sp medium DarkOnSurface) ... "5 semanas" (11sp mutedText)
                     Row(
                         modifier = GlanceModifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(
-                                text = "Constancia",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.Indigo),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                        Text(
+                            text = "Constancia",
+                            style = TextStyle(
+                                color = ColorProvider(WidgetColors.TextPrimary),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
                             )
-                            Text(
-                                text = "Últimas 5 semanas",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.TextSecondary),
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
+                        )
 
                         Spacer(modifier = GlanceModifier.defaultWeight())
 
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "$activeDaysCount/35 días ($activePct%)",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.Emerald),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                        Text(
+                            text = "5 semanas",
+                            style = TextStyle(
+                                color = ColorProvider(WidgetColors.MutedText),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal
                             )
-                            if (topStreak > 0) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Image(
-                                        provider = ImageProvider(R.drawable.ic_widget_flame),
-                                        contentDescription = "Racha",
-                                        modifier = GlanceModifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = GlanceModifier.width(2.dp))
-                                    Text(
-                                        text = "$topStreak días racha",
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.Amber),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    )
-                                }
-                            }
-                        }
+                        )
                     }
 
                     Spacer(modifier = GlanceModifier.height(8.dp))
 
-                    // 35-Day Heatmap Grid Bitmap filling with balanced proportions
+                    // 5x7 Heatmap Grid
                     Image(
                         provider = ImageProvider(heatmapBitmap),
-                        contentDescription = "Mapa de constancia de 35 días",
+                        contentDescription = "Mapa de constancia de 5 semanas",
                         modifier = GlanceModifier
                             .fillMaxWidth()
-                            .height(72.dp)
+                            .defaultWeight()
                     )
-
-                    Spacer(modifier = GlanceModifier.height(8.dp))
-
-                    // Footer with 4-bucket intensity legend
-                    Row(
-                        modifier = GlanceModifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Menos",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextMuted),
-                                fontSize = 10.sp
-                            )
-                        )
-                        Spacer(modifier = GlanceModifier.width(4.dp))
-                        Box(
-                            modifier = GlanceModifier
-                                .size(8.dp)
-                                .cornerRadius(2.dp)
-                                .background(ColorProvider(WidgetColors.HeatmapEmpty))
-                        ) {}
-                        Spacer(modifier = GlanceModifier.width(3.dp))
-                        Box(
-                            modifier = GlanceModifier
-                                .size(8.dp)
-                                .cornerRadius(2.dp)
-                                .background(ColorProvider(WidgetColors.HeatmapLevel1))
-                        ) {}
-                        Spacer(modifier = GlanceModifier.width(3.dp))
-                        Box(
-                            modifier = GlanceModifier
-                                .size(8.dp)
-                                .cornerRadius(2.dp)
-                                .background(ColorProvider(WidgetColors.HeatmapLevel2))
-                        ) {}
-                        Spacer(modifier = GlanceModifier.width(3.dp))
-                        Box(
-                            modifier = GlanceModifier
-                                .size(8.dp)
-                                .cornerRadius(2.dp)
-                                .background(ColorProvider(WidgetColors.HeatmapLevel3))
-                        ) {}
-                        Spacer(modifier = GlanceModifier.width(3.dp))
-                        Box(
-                            modifier = GlanceModifier
-                                .size(8.dp)
-                                .cornerRadius(2.dp)
-                                .background(ColorProvider(WidgetColors.HeatmapLevel4))
-                        ) {}
-                        Spacer(modifier = GlanceModifier.width(4.dp))
-                        Text(
-                            text = "Más",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextMuted),
-                                fontSize = 10.sp
-                            )
-                        )
-                        Spacer(modifier = GlanceModifier.defaultWeight())
-                        Text(
-                            text = "Toca para ver estadísticas",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextMuted),
-                                fontSize = 10.sp
-                            )
-                        )
-                    }
                 }
             }
         }
     }
 }
+
 

@@ -43,11 +43,11 @@ class DailyProgressWidget : GlanceAppWidget() {
 
         val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
             percentage = percentage,
-            sizePx = 180,
+            sizePx = 210,
             strokeWidthPx = 18f,
             trackColorInt = 0xFF334155.toInt(),
             progressColorInt = 0xFF6366F1.toInt(),
-            completedColorInt = 0xFF10B981.toInt()
+            completedColorInt = 0xFF6366F1.toInt()
         )
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
@@ -59,9 +59,9 @@ class DailyProgressWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(18.dp)
-                    .background(ColorProvider(WidgetColors.CardSurface))
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .cornerRadius(16.dp)
+                    .background(ColorProvider(WidgetColors.Surface))
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .clickable(actionStartActivity(mainIntent)),
                 contentAlignment = Alignment.Center
             ) {
@@ -70,46 +70,36 @@ class DailyProgressWidget : GlanceAppWidget() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Progreso Hoy",
-                        style = TextStyle(
-                            color = ColorProvider(WidgetColors.Indigo),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                    )
-
-                    Spacer(modifier = GlanceModifier.height(4.dp))
-
+                    // Circular ring (70dp diameter) with percentage (22sp semibold) inside
                     Box(
-                        modifier = GlanceModifier.size(58.dp),
+                        modifier = GlanceModifier.size(70.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
                             provider = ImageProvider(progressRingBitmap),
                             contentDescription = "Progreso: $percentage%",
-                            modifier = GlanceModifier.size(58.dp)
+                            modifier = GlanceModifier.size(70.dp)
                         )
                         Text(
                             text = "$percentage%",
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextPrimary),
-                                fontSize = 14.sp,
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center
                             )
                         )
                     }
 
-                    Spacer(modifier = GlanceModifier.height(4.dp))
+                    Spacer(modifier = GlanceModifier.height(6.dp))
 
+                    // Text below ring: "X de Y hábitos" (12sp DarkOnSurfaceVariant)
                     Text(
-                        text = if (totalHabits == 0) "Sin hábitos" else "$completedHabits de $totalHabits completados",
+                        text = "$completedHabits de $totalHabits hábitos",
                         style = TextStyle(
-                            color = ColorProvider(if (percentage == 100 && totalHabits > 0) WidgetColors.Emerald else WidgetColors.TextSecondary),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
+                            color = ColorProvider(WidgetColors.TextSecondary),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
                             textAlign = TextAlign.Center
                         ),
                         maxLines = 1
@@ -119,4 +109,5 @@ class DailyProgressWidget : GlanceAppWidget() {
         }
     }
 }
+
 
