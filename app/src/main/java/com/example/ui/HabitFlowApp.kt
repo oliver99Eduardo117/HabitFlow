@@ -717,6 +717,7 @@ fun HabitFlowApp(
                         habits = uiState.habits.map { it.habit },
                         allLogs = uiState.allLogs,
                         insights = uiState.insights,
+                        isLoadingInsights = uiState.isLoadingInsights,
                         themeMode = uiState.themeMode,
                         dynamicColor = uiState.dynamicColor,
                         onSelectThemeMode = { viewModel.setThemeMode(it) },

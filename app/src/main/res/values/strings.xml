@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">HabitFlow</string>
+    <string name="widget_today_description">Checklist de hábitos del día con rachas</string>
+    <string name="widget_daily_progress_description">Progreso y porcentaje diario de hábitos</string>
+    <string name="widget_streak_description">Mayor racha activa de hábitos</string>
+    <string name="widget_consistency_description">Matriz de constancia de las últimas 5 semanas</string>
+    <string name="widget_dashboard_description">Resumen completo: hábitos de hoy, racha, progreso y constancia</string>
 </resources>

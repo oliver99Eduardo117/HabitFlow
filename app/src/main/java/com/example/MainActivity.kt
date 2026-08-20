@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -31,6 +32,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Initialize Widget DataObserver
+        com.example.widget.WidgetRepositoryProvider.startObserving(this)
+
+        // Handle widget deep link
+        val widgetTargetTab = intent.getStringExtra("widget_target_tab")
+        if (widgetTargetTab != null) {
+            habitViewModel.handleWidgetDeepLink(widgetTargetTab)
+        }
+
         // Request notification permission on Android 13+ (API 33)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
@@ -54,6 +64,15 @@ class MainActivity : ComponentActivity() {
                     HabitFlowApp(viewModel = habitViewModel)
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val widgetTargetTab = intent.getStringExtra("widget_target_tab")
+        if (widgetTargetTab != null) {
+            habitViewModel.handleWidgetDeepLink(widgetTargetTab)
         }
     }
 }

@@ -312,6 +312,17 @@ object StreakMilestones {
                 primaryColorHex = "#10B981",
                 secondaryColorHex = "#06B6D4"
             )
+            75 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 75,
+                xpBonus = 850,
+                title = "¡Recta Final de Constancia!",
+                message = "¡75 días ininterrumpidos en '$habitTitle'! Estás en el tramo definitivo hacia los tres dígitos.",
+                iconName = "rocket_launch",
+                primaryColorHex = "#8B5CF6",
+                secondaryColorHex = "#EC4899"
+            )
             100 -> StreakMilestoneEvent(
                 habitId = habitId,
                 habitTitle = habitTitle,
@@ -322,6 +333,17 @@ object StreakMilestones {
                 iconName = "stars",
                 primaryColorHex = "#F59E0B",
                 secondaryColorHex = "#EAB308"
+            )
+            365 -> StreakMilestoneEvent(
+                habitId = habitId,
+                habitTitle = habitTitle,
+                streakDays = 365,
+                xpBonus = 3650,
+                title = "¡Un Año de Disciplina!",
+                message = "¡365 días seguidos en '$habitTitle'! Un año completo de constancia inquebrantable e inspiración total.",
+                iconName = "auto_awesome",
+                primaryColorHex = "#F59E0B",
+                secondaryColorHex = "#EC4899"
             )
             else -> if (streakDays > 0 && streakDays % 50 == 0) {
                 StreakMilestoneEvent(

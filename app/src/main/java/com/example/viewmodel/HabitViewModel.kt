@@ -50,6 +50,7 @@ data class HabitUiState(
     val allLogs: List<HabitLog> = emptyList(),
     val activeTimer: ActiveTimerState = ActiveTimerState(),
     val insights: List<String> = emptyList(),
+    val isLoadingInsights: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
     val isLoading: Boolean = false,
@@ -252,6 +253,18 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun handleWidgetDeepLink(tabName: String?) {
+        when (tabName?.uppercase()) {
+            "ANALYTICS" -> setNavigationTab(NavigationTab.ANALYTICS)
+            "HEATMAP" -> setNavigationTab(NavigationTab.HEATMAP)
+            "CALENDAR" -> setNavigationTab(NavigationTab.CALENDAR)
+            "TIMER" -> setNavigationTab(NavigationTab.TIMER)
+            "GAMIFICATION" -> setNavigationTab(NavigationTab.GAMIFICATION)
+            "TODAY" -> setNavigationTab(NavigationTab.TODAY)
+            else -> { /* keep default */ }
+        }
+    }
+
     fun setLayoutMode(mode: ViewLayoutMode) {
         themePrefs.setLayoutMode(mode)
         _uiState.update { it.copy(layoutMode = mode) }
@@ -397,8 +410,13 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshInsights() {
         viewModelScope.launch {
-            val smartInsights = repository.generateSmartInsights()
-            _uiState.update { it.copy(insights = smartInsights) }
+            _uiState.update { it.copy(isLoadingInsights = true) }
+            try {
+                val smartInsights = repository.generateSmartInsights()
+                _uiState.update { it.copy(insights = smartInsights) }
+            } finally {
+                _uiState.update { it.copy(isLoadingInsights = false) }
+            }
         }
     }
 

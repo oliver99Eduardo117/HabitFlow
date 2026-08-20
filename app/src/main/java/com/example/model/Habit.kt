@@ -25,6 +25,7 @@ data class Habit(
     val reminderCustomMessage: String? = null, // Custom motivational text
     val parentHabitId: Long? = null, // For sub-habits or routine nested tasks
     val dependencyHabitId: Long? = null, // Prerequisite habit that must be completed first
+    val lastMilestoneStreakClaimed: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )
 

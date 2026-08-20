@@ -183,7 +183,7 @@ class HabitRepositoryTest {
     }
 
     @Test
-    fun `checkStreakMilestone awards bonus XP and returns milestone event for 7 day streak`() = runTest {
+    fun `checkStreakMilestone awards bonus XP and prevents duplicate milestone claims on retoggle`() = runTest {
         val habitId = repository.saveHabit(
             Habit(
                 title = "Lectura",
@@ -191,7 +191,9 @@ class HabitRepositoryTest {
                 targetValue = 1f
             )
         )
-        // 7 days completion
+        val today = DateUtils.getTodayDateString()
+
+        // 1. 7 days completion -> milestone for 7 days
         for (i in 0..6) {
             database.habitLogDao().insertOrUpdateLog(
                 HabitLog(
@@ -207,7 +209,66 @@ class HabitRepositoryTest {
         assertEquals(7, milestone?.streakDays)
         assertEquals(100, milestone?.xpBonus)
 
-        val stats = database.userStatsDao().getUserStats()
-        assertTrue("Milestone XP bonus should be awarded", (stats?.xp ?: 0) >= 100)
+        val statsAfterFirstClaim = database.userStatsDao().getUserStats()
+        val xpAfterFirstClaim = statsAfterFirstClaim?.xp ?: 0
+        assertTrue("Milestone XP bonus should be awarded", xpAfterFirstClaim >= 100)
+
+        // 2. Exploit simulation: Unmark (delete log) and remark today's habit
+        database.habitLogDao().deleteLog(habitId, today)
+        database.habitLogDao().insertOrUpdateLog(
+            HabitLog(
+                habitId = habitId,
+                date = today,
+                value = 1f
+            )
+        )
+
+        // Calling checkStreakMilestone again on same 7-day streak must NOT award bonus again
+        val duplicateMilestone = repository.checkStreakMilestone(habitId)
+        org.junit.Assert.assertNull("Duplicate milestone event should be null", duplicateMilestone)
+
+        val statsAfterDuplicateAttempt = database.userStatsDao().getUserStats()
+        assertEquals("XP total must not increase on duplicate milestone claim", xpAfterFirstClaim, statsAfterDuplicateAttempt?.xp)
+
+        // 3. Genuine broken streak: user has a gap and starts a new streak from day 1
+        for (i in 0..6) {
+            database.habitLogDao().deleteLog(habitId, DateUtils.getDaysAgoDateString(i))
+        }
+
+        // Day 1 of new streak
+        database.habitLogDao().insertOrUpdateLog(
+            HabitLog(
+                habitId = habitId,
+                date = today,
+                value = 1f
+            )
+        )
+        // Check milestone on day 1 (resets lastMilestoneStreakClaimed = 0, returns null)
+        val day1Milestone = repository.checkStreakMilestone(habitId)
+        org.junit.Assert.assertNull("No milestone for day 1", day1Milestone)
+
+        // User continues streak for day 2 and day 3
+        database.habitLogDao().insertOrUpdateLog(
+            HabitLog(
+                habitId = habitId,
+                date = DateUtils.getDaysAgoDateString(1),
+                value = 1f
+            )
+        )
+        database.habitLogDao().insertOrUpdateLog(
+            HabitLog(
+                habitId = habitId,
+                date = DateUtils.getDaysAgoDateString(2),
+                value = 1f
+            )
+        )
+
+        val newStreakMilestone = repository.checkStreakMilestone(habitId)
+        org.junit.Assert.assertNotNull("New streak milestone for 3 days should be awarded", newStreakMilestone)
+        assertEquals(3, newStreakMilestone?.streakDays)
+        assertEquals(50, newStreakMilestone?.xpBonus)
+
+        val finalStats = database.userStatsDao().getUserStats()
+        assertEquals(xpAfterFirstClaim + 50, finalStats?.xp)
     }
 }

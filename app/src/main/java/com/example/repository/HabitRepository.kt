@@ -7,6 +7,7 @@ import com.example.network.AiChatClient
 import com.example.notification.NotificationHelper
 import com.example.util.AiProviderPreferences
 import com.example.util.DateUtils
+import com.example.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -98,6 +99,7 @@ class HabitRepository(
             NotificationHelper.cancelHabitReminder(context, habitId)
         }
 
+        WidgetUpdater.refreshAll(context)
         habitId
     }
 
@@ -111,12 +113,14 @@ class HabitRepository(
             }
         }
         habitDao.setArchivedStatus(habitId, isArchived)
+        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun deleteHabit(habitId: Long) = withContext(Dispatchers.IO) {
         NotificationHelper.cancelHabitReminder(context, habitId)
         habitDao.deleteHabitById(habitId)
         subTaskDao.deleteSubTasksForHabit(habitId)
+        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun recordHabitProgress(
@@ -148,6 +152,7 @@ class HabitRepository(
                 deductXpForCompletion(habit, existingLog?.value ?: target)
             }
         }
+        WidgetUpdater.refreshAll(context)
         earnedXp
     }
 
@@ -155,7 +160,7 @@ class HabitRepository(
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
 
-        if (existingLog != null && existingLog.value >= habit.targetValue) {
+        val earnedXp = if (existingLog != null && existingLog.value >= habit.targetValue) {
             habitLogDao.deleteLog(habitId, date)
             deductXpForCompletion(habit, existingLog.value)
             0
@@ -169,6 +174,8 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
             awardXpForCompletion(habit, habit.targetValue)
         }
+        WidgetUpdater.refreshAll(context)
+        earnedXp
     }
 
     suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean): Int = withContext(Dispatchers.IO) {
@@ -215,6 +222,7 @@ class HabitRepository(
         } else {
             categoryDao.insertCategory(updatedCategory)
         }
+        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun deleteCategory(categoryName: String, fallbackCategory: String = "Rutina Personal") = withContext(Dispatchers.IO) {
@@ -236,6 +244,7 @@ class HabitRepository(
             habitDao.updateHabitsCategory(categoryName, fallbackCategory)
         }
         categoryDao.deleteCategoryByName(categoryName)
+        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun getHabitsCountForCategory(categoryName: String): Int = withContext(Dispatchers.IO) {
@@ -325,24 +334,35 @@ class HabitRepository(
      * If so, awards bonus milestone XP and returns the StreakMilestoneEvent.
      */
     suspend fun checkStreakMilestone(habitId: Long): StreakMilestoneEvent? = withContext(Dispatchers.IO) {
-        val habit = habitDao.getHabitById(habitId) ?: return@withContext null
+        var habit = habitDao.getHabitById(habitId) ?: return@withContext null
         val logs = habitLogDao.getLogsForHabit(habitId).first()
         val completedDates = logs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
         val (currentStreak, _) = DateUtils.calculateStreak(completedDates)
 
-        val milestone = StreakMilestones.getMilestone(habitId, habit.title, currentStreak)
-        if (milestone != null) {
-            val currentStats = userStatsDao.getUserStats() ?: UserStats()
-            val bonus = if (currentStats.isHardcoreMode) {
-                (milestone.xpBonus * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
-            } else {
-                milestone.xpBonus
-            }
-            val newXp = currentStats.xp + bonus
-            val newLevel = GamificationConfig.calculateLevel(newXp)
-            checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+        if (currentStreak == 1 && habit.lastMilestoneStreakClaimed != 0) {
+            habit = habit.copy(lastMilestoneStreakClaimed = 0)
+            habitDao.updateHabit(habit)
         }
-        milestone
+
+        if (currentStreak > habit.lastMilestoneStreakClaimed) {
+            val milestone = StreakMilestones.getMilestone(habitId, habit.title, currentStreak)
+            if (milestone != null) {
+                habitDao.updateHabit(habit.copy(lastMilestoneStreakClaimed = currentStreak))
+
+                val currentStats = userStatsDao.getUserStats() ?: UserStats()
+                val bonus = if (currentStats.isHardcoreMode) {
+                    (milestone.xpBonus * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+                } else {
+                    milestone.xpBonus
+                }
+                val newXp = currentStats.xp + bonus
+                val newLevel = GamificationConfig.calculateLevel(newXp)
+                checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+
+                return@withContext milestone
+            }
+        }
+        null
     }
 
     suspend fun addFocusSession(minutes: Int) = withContext(Dispatchers.IO) {

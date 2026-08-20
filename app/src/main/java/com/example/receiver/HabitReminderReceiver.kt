@@ -238,6 +238,8 @@ class HabitReminderReceiver : BroadcastReceiver() {
                             totalCheckIns = stats.totalCheckIns + 1
                         )
                     )
+
+                    com.example.widget.WidgetUpdater.refreshAll(context)
                 } catch (_: Exception) {
                 } finally {
                     pendingResult.finish()
