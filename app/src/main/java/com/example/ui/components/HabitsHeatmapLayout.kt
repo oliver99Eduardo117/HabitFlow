@@ -1,8 +1,12 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -191,12 +195,26 @@ private fun SingleHabitHeatmapCard(
                                 fontWeight = FontWeight.SemiBold
                             )
                             if (habitWithStats.currentStreak > 0) {
-                                Text(
-                                    text = " • 🔥 ${habitWithStats.currentStreak}d racha",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFFF97316),
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = " • ",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.LocalFireDepartment,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF97316),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = "${habitWithStats.currentStreak}d racha",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFFF97316),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -240,6 +258,22 @@ private fun SingleHabitHeatmapCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val animatedStreak by animateIntAsState(
+                targetValue = habitWithStats.currentStreak,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                label = "habit_card_streak"
+            )
+            val animatedBestStreak by animateIntAsState(
+                targetValue = habitWithStats.bestStreak,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                label = "habit_card_best_streak"
+            )
+            val animatedTotalDays by animateIntAsState(
+                targetValue = logsByDate.size,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                label = "habit_card_total_days"
+            )
+
             // Stats summary row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -247,19 +281,19 @@ private fun SingleHabitHeatmapCard(
             ) {
                 MiniStatPill(
                     label = "Racha",
-                    value = "${habitWithStats.currentStreak} días",
+                    value = "$animatedStreak días",
                     color = Color(0xFFF97316),
                     modifier = Modifier.weight(1f)
                 )
                 MiniStatPill(
                     label = "Mejor Racha",
-                    value = "${habitWithStats.bestStreak} días",
+                    value = "$animatedBestStreak días",
                     color = Color(0xFFF59E0B),
                     modifier = Modifier.weight(1f)
                 )
                 MiniStatPill(
                     label = "Total Días",
-                    value = "${logsByDate.size}",
+                    value = "$animatedTotalDays",
                     color = habitColor,
                     modifier = Modifier.weight(1f)
                 )
@@ -384,8 +418,8 @@ private fun SingleHabitHeatmapCard(
             // Interactive Day inspector & toggle
             AnimatedVisibility(
                 visible = selectedDateStr != null,
-                enter = fadeIn(),
-                exit = fadeOut()
+                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                exit = fadeOut() + shrinkVertically()
             ) {
                 selectedDateStr?.let { dateStr ->
                     val log = logsByDate[dateStr]
@@ -417,17 +451,33 @@ private fun SingleHabitHeatmapCard(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = if (isDone) {
-                                        if (habit.unit.isNotEmpty() && log.value > 0f) {
-                                            "✓ Completado (${log.value.toInt()} ${habit.unit})"
-                                        } else {
-                                            "✓ Completado con éxito"
-                                        }
-                                    } else "Sin registro este día",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isDone) habitColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                if (isDone) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = habitColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (habit.unit.isNotEmpty() && log.value > 0f) {
+                                                "Completado (${log.value.toInt()} ${habit.unit})"
+                                            } else {
+                                                "Completado con éxito"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = habitColor
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Sin registro este día",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
 
                             FilledTonalButton(

@@ -65,35 +65,37 @@ class DashboardWidget : GlanceAppWidget() {
             emptyList()
         }
 
-        // Heatmap: 64 days (16 columns x 4 rows)
-        val past64Days = DateUtils.getPastNDaysDateStrings(64)
+        // Heatmap: 20 weeks x 7 days aggregated heatmap (real weeks aligned)
         val totalActive = maxOf(1, activeHabits.size)
         val activeHabitsById = activeHabits.associateBy { it.id }
-        val logsByDate = allLogs.filter { past64Days.contains(it.date) }.groupBy { it.date }
+        val allLogsByDate = allLogs.groupBy { it.date }
 
-        val dailyRatiosList = past64Days.map { dateStr ->
-            val dayLogs = logsByDate[dateStr] ?: emptyList()
-            val doneCount = dayLogs.count { log ->
-                val habit = activeHabitsById[log.habitId]
-                habit != null && log.value >= habit.targetValue
-            }
-            if (activeHabits.isNotEmpty()) {
-                (doneCount.toFloat() / totalActive).coerceIn(0f, 1f)
-            } else if (doneCount > 0) {
-                1f
-            } else {
-                0f
+        val weeks = 20
+        val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
+        val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
+
+        val ratioMatrix: List<List<Float>> = dateMatrix.map { week ->
+            week.map { dateStr ->
+                val dayLogs = allLogsByDate[dateStr] ?: emptyList()
+                val doneCount = dayLogs.count { log ->
+                    val habit = activeHabitsById[log.habitId]
+                    habit != null && log.value >= habit.targetValue
+                }
+                if (activeHabits.isNotEmpty()) {
+                    (doneCount.toFloat() / totalActive).coerceIn(0f, 1f)
+                } else if (doneCount > 0) {
+                    1f
+                } else {
+                    0f
+                }
             }
         }
 
-        val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHeatmapGridBitmap(
-            dailyRatios = dailyRatiosList,
-            columns = 16,
-            rows = 4,
-            widthPx = 540,
-            heightPx = 120,
-            gapPx = 5f,
-            cornerRadiusPx = 4f
+        val heatmapBitmap: Bitmap = WidgetBitmapUtils.createAggregatedHeatmapBitmap(
+            ratioMatrix = ratioMatrix,
+            monthPositions = monthPositions,
+            widthPx = 900,
+            heightPx = 400
         )
 
         val todayDateHeader = formatHeaderDate()
@@ -364,12 +366,13 @@ class DashboardWidget : GlanceAppWidget() {
                     Box(
                         modifier = GlanceModifier
                             .fillMaxWidth()
+                            .defaultWeight()
                             .cornerRadius(14.dp)
                             .background(ColorProvider(WidgetColors.CardSurface))
                             .padding(10.dp)
                             .clickable(actionStartActivity(analyticsTabIntent))
                     ) {
-                        Column(modifier = GlanceModifier.fillMaxWidth()) {
+                        Column(modifier = GlanceModifier.fillMaxSize()) {
                             Row(
                                 modifier = GlanceModifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -384,7 +387,7 @@ class DashboardWidget : GlanceAppWidget() {
                                 )
                                 Spacer(modifier = GlanceModifier.defaultWeight())
                                 Text(
-                                    text = "8 semanas",
+                                    text = "20 semanas",
                                     style = TextStyle(
                                         color = ColorProvider(WidgetColors.TextMuted),
                                         fontSize = 10.sp
@@ -394,14 +397,35 @@ class DashboardWidget : GlanceAppWidget() {
 
                             Spacer(modifier = GlanceModifier.height(6.dp))
 
-                            // Crisp Heatmap Bitmap that fits the entire width nicely
-                            Image(
-                                provider = ImageProvider(heatmapBitmap),
-                                contentDescription = "Mapa de constancia",
-                                modifier = GlanceModifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                            )
+                            Row(
+                                modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = GlanceModifier.padding(top = 10.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val dayLetters = listOf("L", "M", "X", "J", "V", "S", "D")
+                                    dayLetters.forEach { dayLetter ->
+                                        Text(
+                                            text = dayLetter,
+                                            style = TextStyle(
+                                                color = ColorProvider(WidgetColors.MutedText),
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        )
+                                    }
+                                }
+
+                                Image(
+                                    provider = ImageProvider(heatmapBitmap),
+                                    contentDescription = "Mapa de constancia de 20 semanas",
+                                    modifier = GlanceModifier
+                                        .fillMaxWidth()
+                                        .defaultWeight()
+                                )
+                            }
                         }
                     }
                 }

@@ -1,8 +1,12 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -80,6 +84,22 @@ fun HabitDetailDialog(
         DateUtils.calculateStreak(logsByDate.keys)
     }
     val totalActiveDays = logsByDate.keys.size
+
+    val animatedCurrentStreak by animateIntAsState(
+        targetValue = currentStreak,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_current_streak"
+    )
+    val animatedBestStreak by animateIntAsState(
+        targetValue = bestStreak,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_best_streak"
+    )
+    val animatedTotalActiveDays by animateIntAsState(
+        targetValue = totalActiveDays,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_total_active_days"
+    )
 
     val weeks = 16
     val dateMatrix = remember(weeks) {
@@ -193,20 +213,26 @@ fun HabitDetailDialog(
                         .verticalScroll(rememberScrollState())
                 ) {
                     // Description
-                    if (habit.description.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = habit.description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp)
-                            )
+                    AnimatedVisibility(
+                        visible = habit.description.isNotEmpty(),
+                        enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = habit.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
                         }
-                        Spacer(modifier = Modifier.height(14.dp))
                     }
 
                     // Key Stats Grid
@@ -216,21 +242,21 @@ fun HabitDetailDialog(
                     ) {
                         DetailStatCard(
                             title = "Racha Actual",
-                            value = "$currentStreak días",
+                            value = "$animatedCurrentStreak días",
                             icon = Icons.Default.LocalFireDepartment,
                             iconTint = Color(0xFFF97316),
                             modifier = Modifier.weight(1f)
                         )
                         DetailStatCard(
                             title = "Mejor Racha",
-                            value = "$bestStreak días",
+                            value = "$animatedBestStreak días",
                             icon = Icons.Default.EmojiEvents,
                             iconTint = Color(0xFFF59E0B),
                             modifier = Modifier.weight(1f)
                         )
                         DetailStatCard(
                             title = "Total Días",
-                            value = "$totalActiveDays",
+                            value = "$animatedTotalActiveDays",
                             icon = Icons.Default.CheckCircle,
                             iconTint = habitColor,
                             modifier = Modifier.weight(1f)
@@ -303,162 +329,191 @@ fun HabitDetailDialog(
                             }
 
                             // Reminder details
-                            if (!habit.reminderTime.isNullOrBlank()) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.NotificationsActive,
-                                            contentDescription = null,
-                                            tint = habitColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                            AnimatedVisibility(
+                                visible = !habit.reminderTime.isNullOrBlank(),
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.NotificationsActive,
+                                                contentDescription = null,
+                                                tint = habitColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Recordatorio diario:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         Text(
-                                            text = "Recordatorio diario:",
+                                            text = if (habit.reminderMinutesAdvance > 0) "${habit.reminderTime} (-${habit.reminderMinutesAdvance} min)" else (habit.reminderTime ?: ""),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
-                                    Text(
-                                        text = if (habit.reminderMinutesAdvance > 0) "${habit.reminderTime} (-${habit.reminderMinutesAdvance} min)" else habit.reminderTime,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
                                 }
                             }
 
                             // Quantitative metric
-                            if (habit.unit.isNotEmpty()) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.TrackChanges,
-                                            contentDescription = null,
-                                            tint = habitColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                            AnimatedVisibility(
+                                visible = habit.unit.isNotEmpty(),
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.TrackChanges,
+                                                contentDescription = null,
+                                                tint = habitColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Meta cuantitativa:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         Text(
-                                            text = "Meta cuantitativa:",
+                                            text = "${habit.targetValue.toInt()} ${habit.unit} al día",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
-                                    Text(
-                                        text = "${habit.targetValue.toInt()} ${habit.unit} al día",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
                                 }
                             }
 
                             // Pomodoro Timer
-                            if (habit.hasTimer) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Timer,
-                                            contentDescription = null,
-                                            tint = habitColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                            AnimatedVisibility(
+                                visible = habit.hasTimer,
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Timer,
+                                                contentDescription = null,
+                                                tint = habitColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Enfoque / Pomodoro:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         Text(
-                                            text = "Enfoque / Pomodoro:",
+                                            text = "${habit.timerDurationMinutes} minutos",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
-                                    Text(
-                                        text = "${habit.timerDurationMinutes} minutos",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
                                 }
                             }
                         }
                     }
 
                     // Sub-tasks checklist if any
-                    if (habitWithStats.subTasks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                            border = CardDefaults.outlinedCardBorder(),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                val completedCount = habitWithStats.subTasks.count { it.isCompleted }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "SUB-RUTINAS",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "$completedCount / ${habitWithStats.subTasks.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = habitColor
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                habitWithStats.subTasks.forEach { subTask ->
+                    AnimatedVisibility(
+                        visible = habitWithStats.subTasks.isNotEmpty(),
+                        enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        val completedCount = habitWithStats.subTasks.count { it.isCompleted }
+                        val animatedCompletedCount by animateIntAsState(
+                            targetValue = completedCount,
+                            animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                            label = "detail_completed_subtasks"
+                        )
+                        Column {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                                border = CardDefaults.outlinedCardBorder(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onToggleSubTask(subTask, !subTask.isCompleted) }
-                                            .padding(vertical = 3.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Checkbox(
-                                            checked = subTask.isCompleted,
-                                            onCheckedChange = { onToggleSubTask(subTask, it) },
-                                            colors = CheckboxDefaults.colors(checkedColor = habitColor),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = subTask.title,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            textDecoration = if (subTask.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                            color = if (subTask.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                            text = "SUB-RUTINAS",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
+                                        Text(
+                                            text = "$animatedCompletedCount / ${habitWithStats.subTasks.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = habitColor
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    habitWithStats.subTasks.forEach { subTask ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onToggleSubTask(subTask, !subTask.isCompleted) }
+                                                .padding(vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = subTask.isCompleted,
+                                                onCheckedChange = { onToggleSubTask(subTask, it) },
+                                                colors = CheckboxDefaults.colors(checkedColor = habitColor),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = subTask.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                textDecoration = if (subTask.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                                color = if (subTask.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -608,8 +663,8 @@ fun HabitDetailDialog(
                             // Selected day detail
                             AnimatedVisibility(
                                 visible = selectedDayStr != null,
-                                enter = fadeIn(),
-                                exit = fadeOut()
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
                             ) {
                                 selectedDayStr?.let { dateStr ->
                                     val log = logsByDate[dateStr]
@@ -635,11 +690,29 @@ fun HabitDetailDialog(
                                                     style = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold
                                                 )
-                                                Text(
-                                                    text = if (isDone) "Completado" else "No registrado",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = if (isDone) habitColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                if (isDone) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Check,
+                                                            contentDescription = null,
+                                                            tint = habitColor,
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            text = "Completado",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = habitColor
+                                                        )
+                                                    }
+                                                } else {
+                                                    Text(
+                                                        text = "No registrado",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
 
                                             if (onToggleDateCompletion != null) {

@@ -85,6 +85,40 @@ object DateUtils {
         return matrix
     }
 
+    fun calculateMonthPositionsForHabit(dateMatrix: List<List<String>>): List<Pair<String, Int>> {
+        if (dateMatrix.isEmpty()) return emptyList()
+        val positions = mutableListOf<Pair<String, Int>>()
+        val iso = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val monthFmt = SimpleDateFormat("MMM", Locale("es", "ES"))
+
+        var lastMonth = ""
+        var lastAddedWeek = -10
+
+        dateMatrix.forEachIndexed { weekIndex, week ->
+            val firstOfMonth = week.find { it.endsWith("-01") }
+            val targetDay = firstOfMonth ?: week.getOrNull(3) ?: week.firstOrNull()
+            val monthStr = if (targetDay != null) {
+                try {
+                    val d = iso.parse(targetDay)
+                    if (d != null) monthFmt.format(d).replaceFirstChar { it.uppercase() } else ""
+                } catch (_: Exception) { "" }
+            } else ""
+
+            if (monthStr.isNotEmpty()) {
+                if (weekIndex == 0) {
+                    positions.add(Pair(monthStr, 0))
+                    lastMonth = monthStr
+                    lastAddedWeek = 0
+                } else if (monthStr != lastMonth && (weekIndex - lastAddedWeek) >= 3) {
+                    positions.add(Pair(monthStr, weekIndex))
+                    lastMonth = monthStr
+                    lastAddedWeek = weekIndex
+                }
+            }
+        }
+        return positions
+    }
+
     /**
      * Generates all days of a given month for the interactive calendar view.
      */

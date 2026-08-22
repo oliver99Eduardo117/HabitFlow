@@ -22,6 +22,7 @@ import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.*
@@ -294,7 +295,7 @@ class ToggleHabitAction : ActionCallback {
             TodayWidget().update(context, glanceId)
         } catch (_: Exception) {}
         try {
-            DashboardWidget().update(context, glanceId)
+            DashboardWidget().updateAll(context)
         } catch (_: Exception) {}
 
         // 3. Perform asynchronous background Room DB sync

@@ -1,9 +1,18 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,6 +84,8 @@ fun AddEditHabitDialog(
 
     // Dependency
     var selectedDependencyId by remember { mutableStateOf<Long?>(initialHabit?.dependencyHabitId) }
+
+    var titleError by remember { mutableStateOf(false) }
 
     var showIconGalleryDialog by remember { mutableStateOf(false) }
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
@@ -149,13 +161,30 @@ fun AddEditHabitDialog(
                     // Title Input
                     OutlinedTextField(
                         value = title,
-                        onValueChange = { title = it },
+                        onValueChange = {
+                            title = it
+                            if (it.isNotBlank()) titleError = false
+                        },
                         label = { Text("Nombre del hábito *") },
                         placeholder = { Text("Ej. Meditar, Lectura, Cardio...") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        singleLine = true
+                        singleLine = true,
+                        isError = titleError
                     )
+
+                    AnimatedVisibility(
+                        visible = titleError,
+                        enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Text(
+                            text = "El nombre del hábito es obligatorio",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -197,14 +226,29 @@ fun AddEditHabitDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Current Icon Avatar
+                                // Current Icon Avatar with press feedback
+                                val avatarInteractionSource = remember { MutableInteractionSource() }
+                                val isAvatarPressed by avatarInteractionSource.collectIsPressedAsState()
+                                val avatarScale by animateFloatAsState(
+                                    targetValue = if (isAvatarPressed) 0.95f else 1f,
+                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+                                    label = "avatar_press_scale"
+                                )
+
                                 Box(
                                     modifier = Modifier
                                         .size(54.dp)
+                                        .graphicsLayer {
+                                            scaleX = avatarScale
+                                            scaleY = avatarScale
+                                        }
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(parsedColor.copy(alpha = 0.2f))
                                         .border(2.dp, parsedColor, RoundedCornerShape(16.dp))
-                                        .clickable { showIconGalleryDialog = true },
+                                        .clickable(
+                                            interactionSource = avatarInteractionSource,
+                                            indication = null
+                                        ) { showIconGalleryDialog = true },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
@@ -493,26 +537,32 @@ fun AddEditHabitDialog(
                                 )
                             }
 
-                            if (hasMetric) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    OutlinedTextField(
-                                        value = unit,
-                                        onValueChange = { unit = it },
-                                        label = { Text("Unidad (ej. min, pág)") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                    OutlinedTextField(
-                                        value = targetValueText,
-                                        onValueChange = { targetValueText = it },
-                                        label = { Text("Meta diaria") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
+                            AnimatedVisibility(
+                                visible = hasMetric,
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = unit,
+                                            onValueChange = { unit = it },
+                                            label = { Text("Unidad (ej. min, pág)") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                        OutlinedTextField(
+                                            value = targetValueText,
+                                            onValueChange = { targetValueText = it },
+                                            label = { Text("Meta diaria") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -549,15 +599,21 @@ fun AddEditHabitDialog(
                                 )
                             }
 
-                            if (hasTimer) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(
-                                    value = timerMinutesText,
-                                    onValueChange = { timerMinutesText = it },
-                                    label = { Text("Duración objetivo (minutos)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
+                            AnimatedVisibility(
+                                visible = hasTimer,
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = timerMinutesText,
+                                        onValueChange = { timerMinutesText = it },
+                                        label = { Text("Duración objetivo (minutos)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                }
                             }
                         }
                     }
@@ -616,220 +672,226 @@ fun AddEditHabitDialog(
                                 )
                             }
 
-                            if (hasReminder) {
-                                Spacer(modifier = Modifier.height(12.dp))
+                            AnimatedVisibility(
+                                visible = hasReminder,
+                                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(12.dp))
 
-                                Text(
-                                    text = "Horarios Rápidos",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // Quick Presets Row
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    val presets = listOf(
-                                        Triple("Mañana", "07" to "00", Icons.Default.WbSunny),
-                                        Triple("Mediodía", "13" to "00", Icons.Default.LightMode),
-                                        Triple("Tarde", "18" to "30", Icons.Default.WbTwilight),
-                                        Triple("Noche", "21" to "30", Icons.Default.DarkMode)
+                                    Text(
+                                        text = "Horarios Rápidos",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    presets.forEach { (label, time, icon) ->
-                                        val isSelected = reminderHour == time.first && reminderMinute == time.second
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = {
-                                                reminderHour = time.first
-                                                reminderMinute = time.second
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                            },
-                                            label = { Text(label, fontSize = 12.sp) }
-                                        )
-                                    }
-                                }
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
 
-                                // Time Input (Hour : Minute)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = reminderHour,
-                                        onValueChange = { input ->
-                                            val filtered = input.filter { it.isDigit() }
-                                            if (filtered.length <= 2) {
-                                                val num = filtered.toIntOrNull()
-                                                if (num == null || num in 0..23) reminderHour = filtered
-                                            }
-                                        },
-                                        label = { Text("Hora (00-23)") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        leadingIcon = {
-                                            Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }
-                                    )
-                                    Text(text = ":", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                                    OutlinedTextField(
-                                        value = reminderMinute,
-                                        onValueChange = { input ->
-                                            val filtered = input.filter { it.isDigit() }
-                                            if (filtered.length <= 2) {
-                                                val num = filtered.toIntOrNull()
-                                                if (num == null || num in 0..59) reminderMinute = filtered
-                                            }
-                                        },
-                                        label = { Text("Minuto (00-59)") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Advance / Anticipation selector
-                                Text(
-                                    text = "Anticipación del Recordatorio (Avisar antes)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    val advanceOptions = listOf(
-                                        Triple(0, "A la hora", Icons.Default.AlarmOn),
-                                        Triple(5, "5 min antes", Icons.Default.Timer),
-                                        Triple(10, "10 min antes", Icons.Default.Timer),
-                                        Triple(15, "15 min antes", Icons.Default.Timer),
-                                        Triple(30, "30 min antes", Icons.Default.Timer),
-                                        Triple(60, "1 hora antes", Icons.Default.HourglassTop)
-                                    )
-                                    advanceOptions.forEach { (mins, label, icon) ->
-                                        val isSelected = reminderMinutesAdvance == mins
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = { reminderMinutesAdvance = mins },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            },
-                                            label = { Text(label, fontSize = 11.sp) }
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // Custom reminder message
-                                OutlinedTextField(
-                                    value = reminderCustomMessage,
-                                    onValueChange = { reminderCustomMessage = it },
-                                    label = { Text("Mensaje o motivación personalizada (opcional)") },
-                                    placeholder = { Text("Ej: Prepárate, es momento de cumplir tu meta diaria.") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    maxLines = 2,
-                                    leadingIcon = {
-                                        Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    }
-                                )
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // Dynamic calculated notification summary banner
-                                val calcHour = reminderHour.toIntOrNull() ?: 8
-                                val calcMin = reminderMinute.toIntOrNull() ?: 30
-                                val totalMin = (calcHour * 60 + calcMin) - reminderMinutesAdvance
-                                val adjustedTotalMin = if (totalMin < 0) totalMin + 1440 else totalMin
-                                val notifHour = (adjustedTotalMin / 60).toString().padStart(2, '0')
-                                val notifMin = (adjustedTotalMin % 60).toString().padStart(2, '0')
-
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
+                                    // Quick Presets Row
                                     Row(
-                                        modifier = Modifier.padding(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        val presets = listOf(
+                                            Triple("Mañana", "07" to "00", Icons.Default.WbSunny),
+                                            Triple("Mediodía", "13" to "00", Icons.Default.LightMode),
+                                            Triple("Tarde", "18" to "30", Icons.Default.WbTwilight),
+                                            Triple("Noche", "21" to "30", Icons.Default.DarkMode)
+                                        )
+                                        presets.forEach { (label, time, icon) ->
+                                            val isSelected = reminderHour == time.first && reminderMinute == time.second
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    reminderHour = time.first
+                                                    reminderMinute = time.second
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                },
+                                                label = { Text(label, fontSize = 12.sp) }
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Time Input (Hour : Minute)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = if (reminderMinutesAdvance > 0) {
-                                                "La alerta sonará a las $notifHour:$notifMin ($reminderMinutesAdvance min antes de tu hábito a las ${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')})."
-                                            } else {
-                                                "La alerta sonará exactamente a las ${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')}."
+                                        OutlinedTextField(
+                                            value = reminderHour,
+                                            onValueChange = { input ->
+                                                val filtered = input.filter { it.isDigit() }
+                                                if (filtered.length <= 2) {
+                                                    val num = filtered.toIntOrNull()
+                                                    if (num == null || num in 0..23) reminderHour = filtered
+                                                }
                                             },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            label = { Text("Hora (00-23)") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true,
+                                            leadingIcon = {
+                                                Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            }
+                                        )
+                                        Text(text = ":", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                        OutlinedTextField(
+                                            value = reminderMinute,
+                                            onValueChange = { input ->
+                                                val filtered = input.filter { it.isDigit() }
+                                                if (filtered.length <= 2) {
+                                                    val num = filtered.toIntOrNull()
+                                                    if (num == null || num in 0..59) reminderMinute = filtered
+                                                }
+                                            },
+                                            label = { Text("Minuto (00-59)") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
                                         )
                                     }
-                                }
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
 
-                                // Test notification button
-                                OutlinedButton(
-                                    onClick = {
-                                        val previewHabit = Habit(
-                                            id = initialHabit?.id ?: 9999L,
-                                            title = if (title.isNotBlank()) title else "Nuevo Hábito",
-                                            description = description,
-                                            category = selectedCategory,
-                                            colorHex = selectedColorHex,
-                                            reminderTime = "${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')}",
-                                            reminderMinutesAdvance = reminderMinutesAdvance,
-                                            reminderCustomMessage = reminderCustomMessage.ifBlank { null },
-                                            hasTimer = hasTimer,
-                                            timerDurationMinutes = timerMinutesText.toIntOrNull() ?: 25
-                                        )
-                                        if (onTestReminder != null) {
-                                            onTestReminder(previewHabit)
-                                        } else {
-                                            NotificationHelper.showTestReminderNotification(context, previewHabit)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.NotificationsActive,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
+                                    // Advance / Anticipation selector
+                                    Text(
+                                        text = "Anticipación del Recordatorio (Avisar antes)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Probar notificación en este dispositivo", fontSize = 12.sp)
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        val advanceOptions = listOf(
+                                            Triple(0, "A la hora", Icons.Default.AlarmOn),
+                                            Triple(5, "5 min antes", Icons.Default.Timer),
+                                            Triple(10, "10 min antes", Icons.Default.Timer),
+                                            Triple(15, "15 min antes", Icons.Default.Timer),
+                                            Triple(30, "30 min antes", Icons.Default.Timer),
+                                            Triple(60, "1 hora antes", Icons.Default.HourglassTop)
+                                        )
+                                        advanceOptions.forEach { (mins, label, icon) ->
+                                            val isSelected = reminderMinutesAdvance == mins
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = { reminderMinutesAdvance = mins },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                },
+                                                label = { Text(label, fontSize = 11.sp) }
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Custom reminder message
+                                    OutlinedTextField(
+                                        value = reminderCustomMessage,
+                                        onValueChange = { reminderCustomMessage = it },
+                                        label = { Text("Mensaje o motivación personalizada (opcional)") },
+                                        placeholder = { Text("Ej: Prepárate, es momento de cumplir tu meta diaria.") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        maxLines = 2,
+                                        leadingIcon = {
+                                            Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Dynamic calculated notification summary banner
+                                    val calcHour = reminderHour.toIntOrNull() ?: 8
+                                    val calcMin = reminderMinute.toIntOrNull() ?: 30
+                                    val totalMin = (calcHour * 60 + calcMin) - reminderMinutesAdvance
+                                    val adjustedTotalMin = if (totalMin < 0) totalMin + 1440 else totalMin
+                                    val notifHour = (adjustedTotalMin / 60).toString().padStart(2, '0')
+                                    val notifMin = (adjustedTotalMin % 60).toString().padStart(2, '0')
+
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Info,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = if (reminderMinutesAdvance > 0) {
+                                                    "La alerta sonará a las $notifHour:$notifMin ($reminderMinutesAdvance min antes de tu hábito a las ${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')})."
+                                                } else {
+                                                    "La alerta sonará exactamente a las ${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')}."
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Test notification button
+                                    OutlinedButton(
+                                        onClick = {
+                                            val previewHabit = Habit(
+                                                id = initialHabit?.id ?: 9999L,
+                                                title = if (title.isNotBlank()) title else "Nuevo Hábito",
+                                                description = description,
+                                                category = selectedCategory,
+                                                colorHex = selectedColorHex,
+                                                reminderTime = "${reminderHour.padStart(2, '0')}:${reminderMinute.padStart(2, '0')}",
+                                                reminderMinutesAdvance = reminderMinutesAdvance,
+                                                reminderCustomMessage = reminderCustomMessage.ifBlank { null },
+                                                hasTimer = hasTimer,
+                                                timerDurationMinutes = timerMinutesText.toIntOrNull() ?: 25
+                                            )
+                                            if (onTestReminder != null) {
+                                                onTestReminder(previewHabit)
+                                            } else {
+                                                NotificationHelper.showTestReminderNotification(context, previewHabit)
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NotificationsActive,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Probar notificación en este dispositivo", fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
@@ -922,36 +984,37 @@ fun AddEditHabitDialog(
 
                     Button(
                         onClick = {
-                            if (title.isNotBlank()) {
-                                val target = targetValueText.toFloatOrNull() ?: 1f
-                                val timerMins = timerMinutesText.toIntOrNull() ?: 25
-                                val reminder = if (hasReminder) {
-                                    val h = reminderHour.padStart(2, '0')
-                                    val m = reminderMinute.padStart(2, '0')
-                                    "$h:$m"
-                                } else null
-
-                                val habitToSave = (initialHabit ?: Habit(title = title)).copy(
-                                    title = title.trim(),
-                                    description = description.trim(),
-                                    category = selectedCategory,
-                                    colorHex = selectedColorHex,
-                                    iconName = selectedIconName,
-                                    frequencyDays = frequencyDays,
-                                    unit = if (hasMetric) unit.trim() else "",
-                                    targetValue = if (hasMetric) target else 1f,
-                                    hasTimer = hasTimer,
-                                    timerDurationMinutes = timerMins,
-                                    reminderTime = reminder,
-                                    reminderMinutesAdvance = if (hasReminder) reminderMinutesAdvance else 0,
-                                    reminderCustomMessage = if (hasReminder && reminderCustomMessage.isNotBlank()) reminderCustomMessage.trim() else null,
-                                    dependencyHabitId = selectedDependencyId
-                                )
-                                onSaveHabit(habitToSave, subTasks.toList())
-                                onDismiss()
+                            if (title.isBlank()) {
+                                titleError = true
+                                return@Button
                             }
-                        },
-                        enabled = title.isNotBlank()
+                            val target = targetValueText.toFloatOrNull() ?: 1f
+                            val timerMins = timerMinutesText.toIntOrNull() ?: 25
+                            val reminder = if (hasReminder) {
+                                val h = reminderHour.padStart(2, '0')
+                                val m = reminderMinute.padStart(2, '0')
+                                "$h:$m"
+                            } else null
+
+                            val habitToSave = (initialHabit ?: Habit(title = title)).copy(
+                                title = title.trim(),
+                                description = description.trim(),
+                                category = selectedCategory,
+                                colorHex = selectedColorHex,
+                                iconName = selectedIconName,
+                                frequencyDays = frequencyDays,
+                                unit = if (hasMetric) unit.trim() else "",
+                                targetValue = if (hasMetric) target else 1f,
+                                hasTimer = hasTimer,
+                                timerDurationMinutes = timerMins,
+                                reminderTime = reminder,
+                                reminderMinutesAdvance = if (hasReminder) reminderMinutesAdvance else 0,
+                                reminderCustomMessage = if (hasReminder && reminderCustomMessage.isNotBlank()) reminderCustomMessage.trim() else null,
+                                dependencyHabitId = selectedDependencyId
+                            )
+                            onSaveHabit(habitToSave, subTasks.toList())
+                            onDismiss()
+                        }
                     ) {
                         Text("Guardar Hábito")
                     }

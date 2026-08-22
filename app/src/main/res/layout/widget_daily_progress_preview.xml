@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="@drawable/bg_widget_card"
+    android:background="#1E293B"
     android:paddingLeft="10dp"
     android:paddingRight="10dp"
     android:paddingTop="8dp"
@@ -30,8 +30,7 @@
             android:layout_width="58dp"
             android:layout_height="58dp"
             android:indeterminateOnly="false"
-            android:progress="75"
-            android:progressDrawable="@drawable/bg_widget_progress_ring" />
+            android:progress="75" />
 
         <TextView
             android:layout_width="match_parent"

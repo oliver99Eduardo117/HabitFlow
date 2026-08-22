@@ -1,8 +1,12 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,9 +17,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -76,6 +84,22 @@ fun HabitDetailHeatmapDialog(
         DateUtils.calculateStreak(logsByDate.keys)
     }
     val totalActiveDays = logsByDate.keys.size
+
+    val animatedCurrentStreak by animateIntAsState(
+        targetValue = currentStreak,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_heatmap_current_streak"
+    )
+    val animatedBestStreak by animateIntAsState(
+        targetValue = bestStreak,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_heatmap_best_streak"
+    )
+    val animatedActiveDays by animateIntAsState(
+        targetValue = totalActiveDays,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "detail_heatmap_active_days"
+    )
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -168,22 +192,22 @@ fun HabitDetailHeatmapDialog(
                 ) {
                     HeatmapStatPill(
                         title = "Racha Actual",
-                        value = "$currentStreak días",
-                        icon = "🔥",
+                        value = "$animatedCurrentStreak días",
+                        icon = Icons.Default.LocalFireDepartment,
                         color = Color(0xFFF97316),
                         modifier = Modifier.weight(1f)
                     )
                     HeatmapStatPill(
                         title = "Mejor Racha",
-                        value = "$bestStreak días",
-                        icon = "🏆",
+                        value = "$animatedBestStreak días",
+                        icon = Icons.Default.EmojiEvents,
                         color = Color(0xFFF59E0B),
                         modifier = Modifier.weight(1f)
                     )
                     HeatmapStatPill(
                         title = "Total Días",
-                        value = "$totalActiveDays",
-                        icon = "🌱",
+                        value = "$animatedActiveDays",
+                        icon = Icons.Default.Eco,
                         color = habitColor,
                         modifier = Modifier.weight(1f)
                     )
@@ -314,12 +338,23 @@ fun HabitDetailHeatmapDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Desliza para ver historial 👈",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = "Desliza para ver historial",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
@@ -345,8 +380,8 @@ fun HabitDetailHeatmapDialog(
                 // Interactive Day Details Box
                 AnimatedVisibility(
                     visible = selectedDayStr != null,
-                    enter = fadeIn(),
-                    exit = fadeOut()
+                    enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
+                    exit = fadeOut() + shrinkVertically()
                 ) {
                     selectedDayStr?.let { dateStr ->
                         val log = logsByDate[dateStr]
@@ -378,17 +413,33 @@ fun HabitDetailHeatmapDialog(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    Text(
-                                        text = if (isDone) {
-                                            if (habit.unit.isNotEmpty() && log.value > 0f) {
-                                                "✓ Completado (${log.value} ${habit.unit})"
-                                            } else {
-                                                "✓ Completado con éxito"
-                                            }
-                                        } else "No registrado este día",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (isDone) habitColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    if (isDone) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = habitColor,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (habit.unit.isNotEmpty() && log.value > 0f) {
+                                                    "Completado (${log.value} ${habit.unit})"
+                                                } else {
+                                                    "Completado con éxito"
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = habitColor
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "No registrado este día",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
 
                                 if (onToggleDateCompletion != null) {

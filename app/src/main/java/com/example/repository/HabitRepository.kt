@@ -32,6 +32,14 @@ class HabitRepository(
 
     fun getLogsForDate(date: String): Flow<List<HabitLog>> = habitLogDao.getLogsForDate(date)
 
+    suspend fun getHabitById(habitId: Long): Habit? = withContext(Dispatchers.IO) {
+        habitDao.getHabitById(habitId)
+    }
+
+    suspend fun getLogForHabitAndDate(habitId: Long, date: String): HabitLog? = withContext(Dispatchers.IO) {
+        habitLogDao.getLogForHabitAndDate(habitId, date)
+    }
+
     fun getSubTasksForHabit(habitId: Long): Flow<List<SubTask>> = subTaskDao.getSubTasksForHabit(habitId)
 
     /**

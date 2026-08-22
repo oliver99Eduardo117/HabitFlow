@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/bg_widget_card"
+    android:background="#1E293B"
     android:padding="12dp">
 
     <!-- Header -->
@@ -44,7 +44,7 @@
         <TextView
             android:layout_width="20dp"
             android:layout_height="20dp"
-            android:background="@drawable/bg_widget_circle_completed"
+            android:background="#10B981"
             android:gravity="center"
             android:text="✓"
             android:textColor="#FFFFFF"
@@ -90,7 +90,7 @@
         <TextView
             android:layout_width="20dp"
             android:layout_height="20dp"
-            android:background="@drawable/bg_widget_circle_completed"
+            android:background="#10B981"
             android:gravity="center"
             android:text="✓"
             android:textColor="#FFFFFF"
@@ -136,7 +136,7 @@
         <View
             android:layout_width="20dp"
             android:layout_height="20dp"
-            android:background="@drawable/bg_widget_circle_uncompleted" />
+            android:background="#334155" />
 
         <TextView
             android:layout_width="0dp"

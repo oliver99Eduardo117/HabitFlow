@@ -490,19 +490,40 @@ fun AnalyticsScreen(
                     FilterChip(
                         selected = themeMode == ThemeMode.LIGHT,
                         onClick = { onSelectThemeMode(ThemeMode.LIGHT) },
-                        label = { Text("☀️ Claro") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.LightMode,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Claro") },
                         modifier = Modifier.weight(1f).testTag("analytics_theme_light")
                     )
                     FilterChip(
                         selected = themeMode == ThemeMode.DARK,
                         onClick = { onSelectThemeMode(ThemeMode.DARK) },
-                        label = { Text("🌙 Oscuro") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.DarkMode,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Oscuro") },
                         modifier = Modifier.weight(1f).testTag("analytics_theme_dark")
                     )
                     FilterChip(
                         selected = themeMode == ThemeMode.SYSTEM,
                         onClick = { onSelectThemeMode(ThemeMode.SYSTEM) },
-                        label = { Text("⚙️ Sistema") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.BrightnessAuto,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Sistema") },
                         modifier = Modifier.weight(1f).testTag("analytics_theme_system")
                     )
                 }

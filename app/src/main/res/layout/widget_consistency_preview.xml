@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/bg_widget_card"
+    android:background="#1E293B"
     android:gravity="center_vertical"
     android:padding="14dp">
 
@@ -58,95 +58,94 @@
 
         <!-- Col 1 -->
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_2" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#9E10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_0" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#334155" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
         </LinearLayout>
 
         <View android:layout_width="6dp" android:layout_height="match_parent" />
 
         <!-- Col 2 -->
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_1" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#5210B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
         </LinearLayout>
 
         <View android:layout_width="6dp" android:layout_height="match_parent" />
 
         <!-- Col 3 -->
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_0" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#334155" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_2" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#9E10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
         </LinearLayout>
 
         <View android:layout_width="6dp" android:layout_height="match_parent" />
 
         <!-- Col 4 -->
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
         </LinearLayout>
 
         <View android:layout_width="6dp" android:layout_height="match_parent" />
 
         <!-- Col 5 -->
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_3" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
             <View android:layout_width="12dp" android:layout_height="3dp" />
-            <View android:layout_width="12dp" android:layout_height="12dp" android:background="@drawable/bg_heatmap_cell_4" />
+            <View android:layout_width="12dp" android:layout_height="12dp" android:background="#10B981" />
         </LinearLayout>
 
     </LinearLayout>
@@ -170,15 +169,15 @@
             android:textSize="9sp" />
 
         <View android:layout_width="3dp" android:layout_height="match_parent" />
-        <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_heatmap_cell_0" />
+        <View android:layout_width="8dp" android:layout_height="8dp" android:background="#334155" />
         <View android:layout_width="2dp" android:layout_height="match_parent" />
-        <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_heatmap_cell_1" />
+        <View android:layout_width="8dp" android:layout_height="8dp" android:background="#5210B981" />
         <View android:layout_width="2dp" android:layout_height="match_parent" />
-        <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_heatmap_cell_2" />
+        <View android:layout_width="8dp" android:layout_height="8dp" android:background="#9E10B981" />
         <View android:layout_width="2dp" android:layout_height="match_parent" />
-        <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_heatmap_cell_3" />
+        <View android:layout_width="8dp" android:layout_height="8dp" android:background="#10B981" />
         <View android:layout_width="2dp" android:layout_height="match_parent" />
-        <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/bg_heatmap_cell_4" />
+        <View android:layout_width="8dp" android:layout_height="8dp" android:background="#10B981" />
         <View android:layout_width="3dp" android:layout_height="match_parent" />
 
         <TextView

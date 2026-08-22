@@ -157,7 +157,12 @@ fun AppNavigationDrawerContent(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("🔥", fontSize = 14.sp)
+                                Icon(
+                                    imageVector = Icons.Default.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF97316),
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Column {
                                     Text("Racha", fontSize = 10.sp, color = Color.White.copy(alpha = 0.75f))
@@ -175,7 +180,12 @@ fun AppNavigationDrawerContent(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("⭐", fontSize = 14.sp)
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Column {
                                     Text("Nivel", fontSize = 10.sp, color = Color.White.copy(alpha = 0.75f))

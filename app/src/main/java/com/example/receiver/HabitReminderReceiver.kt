@@ -189,55 +189,42 @@ class HabitReminderReceiver : BroadcastReceiver() {
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Show immediate success notification feedback
-        val successNotification = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDERS_ID)
-            .setSmallIcon(android.R.drawable.checkbox_on_background)
-            .setContentTitle("¡$habitTitle completado!")
-            .setContentText("¡Excelente trabajo! Has sumado +15 XP a tu racha diaria.")
-            .setColor(AndroidColor.parseColor("#10B981"))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify(notificationId, successNotification)
-
-        // Dismiss the celebration notification after 3 seconds
-        Handler(Looper.getMainLooper()).postDelayed({
-            notificationManager.cancel(notificationId)
-        }, 3000)
-
         if (habitId > 0) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val db = AppDatabase.getInstance(context)
-                    val habit = db.habitDao().getHabitById(habitId)
+                    val repository = com.example.widget.WidgetRepositoryProvider.getRepository(context)
                     val today = DateUtils.getTodayDateString()
+                    val habit = repository.getHabitById(habitId)
                     val targetVal = habit?.targetValue ?: 1f
+                    val existingLog = repository.getLogForHabitAndDate(habitId, today)
 
-                    val existingLog = db.habitLogDao().getLogForHabitAndDate(habitId, today)
-                    val newLog = existingLog?.copy(
-                        value = targetVal,
-                        timestamp = System.currentTimeMillis()
-                    ) ?: HabitLog(
-                        habitId = habitId,
-                        date = today,
-                        value = targetVal,
-                        timestamp = System.currentTimeMillis()
-                    )
-                    db.habitLogDao().insertOrUpdateLog(newLog)
+                    val isAlreadyCompleted = existingLog != null && existingLog.value >= targetVal
+                    if (isAlreadyCompleted) {
+                        return@launch
+                    }
 
-                    // Add XP
-                    val stats = db.userStatsDao().getUserStats() ?: com.example.model.UserStats()
-                    val updatedXp = stats.xp + 15
-                    val updatedLevel = (updatedXp / 100) + 1
-                    db.userStatsDao().insertOrUpdate(
-                        stats.copy(
-                            xp = updatedXp,
-                            level = updatedLevel,
-                            totalCheckIns = stats.totalCheckIns + 1
-                        )
-                    )
+                    val gainedXp = repository.toggleHabitCompletion(habitId, today)
+                    if (gainedXp > 0) {
+                        repository.checkStreakMilestone(habitId)
+                    }
+
+                    // Show success notification feedback with real gained XP
+                    val successNotification = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDERS_ID)
+                        .setSmallIcon(android.R.drawable.checkbox_on_background)
+                        .setContentTitle("¡$habitTitle completado!")
+                        .setContentText("¡Excelente trabajo! Has sumado +$gainedXp XP a tu racha diaria.")
+                        .setColor(AndroidColor.parseColor("#10B981"))
+                        .setPriority(NotificationCompat.PRIORITY_LOW)
+                        .setAutoCancel(true)
+                        .build()
+
+                    notificationManager.notify(notificationId, successNotification)
+
+                    // Dismiss the celebration notification after 3 seconds
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        notificationManager.cancel(notificationId)
+                    }, 3000)
 
                     com.example.widget.WidgetUpdater.refreshAll(context)
                 } catch (_: Exception) {

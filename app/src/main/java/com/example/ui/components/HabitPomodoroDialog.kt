@@ -377,23 +377,41 @@ fun HabitPomodoroDialog(
 
                                 if (isCustomInputInvalid) {
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = if (parsedCustomMinutes > MAX_MINUTES_24_HOURS) {
-                                            "⚠️ El tiempo no puede superar las 24 horas (1440 min)"
-                                        } else {
-                                            "⚠️ Ingresa un valor válido de 1 a 1440 minutos"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (parsedCustomMinutes > MAX_MINUTES_24_HOURS) {
+                                                "El tiempo no puede superar las 24 horas (1440 min)"
+                                            } else {
+                                                "Ingresa un valor válido de 1 a 1440 minutos"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 } else if (parsedCustomMinutes > 0) {
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "⏱️ Tiempo estimado: ${DateUtils.formatMinutesReadable(parsedCustomMinutes)}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Timer,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Tiempo estimado: ${DateUtils.formatMinutesReadable(parsedCustomMinutes)}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -434,12 +452,26 @@ fun HabitPomodoroDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (isRunning) "🔥 En progreso" else if (isPomodoroMode) "Tiempo restante" else "Tiempo transcurrido",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isRunning) habitColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = if (isRunning) FontWeight.Bold else FontWeight.Normal
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isRunning) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = habitColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                            }
+                            Text(
+                                text = if (isRunning) "En progreso" else if (isPomodoroMode) "Tiempo restante" else "Tiempo transcurrido",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isRunning) habitColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (isRunning) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     }
                 }
 

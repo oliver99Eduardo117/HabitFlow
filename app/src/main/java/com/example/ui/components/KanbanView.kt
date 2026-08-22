@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.HabitWithStats
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun KanbanView(
     habits: List<HabitWithStats>,
@@ -78,6 +81,7 @@ fun KanbanView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun KanbanColumn(
     title: String,
@@ -154,16 +158,27 @@ private fun KanbanColumn(
                     }
                 } else {
                     items(habits, key = { it.habit.id }) { habitStat ->
-                        HabitTileCard(
-                            habitWithStats = habitStat,
-                            isGridView = false,
-                            onToggleCompletion = { onToggleCompletion(habitStat.habit.id) },
-                            onOpenProgressDialog = { onOpenProgressDialog(habitStat) },
-                            onStartTimer = { onStartTimer(habitStat) },
-                            onToggleSubTask = { _, _ -> },
-                            onEditHabit = { onEditHabit(habitStat) },
-                            onArchiveHabit = { onArchiveHabit(habitStat.habit.id) }
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItemPlacement(
+                                    animationSpec = spring(
+                                        dampingRatio = 0.8f,
+                                        stiffness = 380f
+                                    )
+                                )
+                        ) {
+                            HabitTileCard(
+                                habitWithStats = habitStat,
+                                isGridView = false,
+                                onToggleCompletion = { onToggleCompletion(habitStat.habit.id) },
+                                onOpenProgressDialog = { onOpenProgressDialog(habitStat) },
+                                onStartTimer = { onStartTimer(habitStat) },
+                                onToggleSubTask = { _, _ -> },
+                                onEditHabit = { onEditHabit(habitStat) },
+                                onArchiveHabit = { onArchiveHabit(habitStat.habit.id) }
+                            )
+                        }
                     }
                 }
             }
