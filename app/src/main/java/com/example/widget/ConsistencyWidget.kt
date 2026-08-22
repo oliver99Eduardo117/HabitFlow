@@ -12,8 +12,10 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -31,6 +33,8 @@ import com.example.util.DateUtils
 import kotlinx.coroutines.flow.first
 
 class ConsistencyWidget : GlanceAppWidget() {
+
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val repository = WidgetRepositoryProvider.getRepository(context)
@@ -54,6 +58,9 @@ class ConsistencyWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            val size = LocalSize.current
+            val density = context.resources.displayMetrics.density
+
             val prefs = currentState<Preferences>()
             val selectedHabitId = prefs[longPreferencesKey("selected_habit_id")]
 
@@ -68,7 +75,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                     .fillMaxSize()
                     .cornerRadius(16.dp)
                     .background(ColorProvider(WidgetColors.Surface))
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
                     .clickable(actionStartActivity(mainIntent))
             ) {
                 if (targetHabitWithStats != null) {
@@ -78,7 +85,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                     val (currentStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
                     val totalActiveDays = completedDates.size
 
-                    val weeks = 14
+                    val weeks = if (size.width < 220.dp) 10 else 14
                     val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
                     val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
 
@@ -89,25 +96,37 @@ class ConsistencyWidget : GlanceAppWidget() {
                     }
                     val habitComposeColor = Color(habitColorInt)
 
-                    val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHabitHeatmapBitmap(
-                        dateMatrix = dateMatrix,
-                        completedDates = completedDates,
-                        habitColorInt = habitColorInt,
-                        monthPositions = monthPositions
+                    val targetHeatmapWidthPx = ((size.width.value - 20f) * density).toInt().coerceAtLeast(140)
+                    val targetHeatmapHeightPx = ((size.height.value - 64f) * density).toInt().coerceAtLeast(50)
+
+                    val uncompletedColorInt = 0x38334155
+                    val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHeatmapBitmap(
+                        columns = weeks,
+                        monthPositions = monthPositions,
+                        targetWidthPx = targetHeatmapWidthPx,
+                        targetHeightPx = targetHeatmapHeightPx,
+                        cellColorProvider = { col, row ->
+                            val dateStr = dateMatrix.getOrNull(col)?.getOrNull(row)
+                            if (dateStr != null && completedDates.contains(dateStr)) {
+                                habitColorInt
+                            } else {
+                                uncompletedColorInt
+                            }
+                        }
                     )
 
                     Column(
                         modifier = GlanceModifier.fillMaxSize()
                     ) {
-                        // 1. Encabezado compacto: Avatar 32dp + Habit info + Streak
+                        // 1. Encabezado compacto: Avatar 28dp + Habit info + Streak
                         Row(
                             modifier = GlanceModifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = GlanceModifier
-                                    .size(32.dp)
-                                    .cornerRadius(8.dp)
+                                    .size(28.dp)
+                                    .cornerRadius(7.dp)
                                     .background(ColorProvider(habitComposeColor.copy(alpha = 0.20f))),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -115,13 +134,13 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     text = habit.title.take(1).uppercase(),
                                     style = TextStyle(
                                         color = ColorProvider(habitComposeColor),
-                                        fontSize = 15.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 )
                             }
 
-                            Spacer(modifier = GlanceModifier.width(8.dp))
+                            Spacer(modifier = GlanceModifier.width(6.dp))
 
                             Column(modifier = GlanceModifier.defaultWeight()) {
                                 Text(
@@ -129,7 +148,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     maxLines = 1,
                                     style = TextStyle(
                                         color = ColorProvider(WidgetColors.TextPrimary),
-                                        fontSize = 13.sp,
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 )
@@ -140,23 +159,23 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 10.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
                                     if (currentStreak > 0) {
-                                        Spacer(modifier = GlanceModifier.width(6.dp))
+                                        Spacer(modifier = GlanceModifier.width(5.dp))
                                         Image(
                                             provider = ImageProvider(R.drawable.ic_widget_flame),
                                             contentDescription = "Racha",
-                                            modifier = GlanceModifier.size(11.dp)
+                                            modifier = GlanceModifier.size(10.dp)
                                         )
                                         Spacer(modifier = GlanceModifier.width(2.dp))
                                         Text(
                                             text = "$currentStreak d",
                                             style = TextStyle(
                                                 color = ColorProvider(Color(0xFFF97316)),
-                                                fontSize = 10.sp,
+                                                fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         )
@@ -165,7 +184,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                             }
                         }
 
-                        Spacer(modifier = GlanceModifier.height(4.dp))
+                        Spacer(modifier = GlanceModifier.height(3.dp))
 
                         // 2. Fila de 3 tarjetas de stats compactas
                         Row(
@@ -175,9 +194,9 @@ class ConsistencyWidget : GlanceAppWidget() {
                             Box(
                                 modifier = GlanceModifier
                                     .defaultWeight()
-                                    .cornerRadius(8.dp)
+                                    .cornerRadius(6.dp)
                                     .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                                    .padding(horizontal = 3.dp, vertical = 2.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -185,7 +204,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         text = "Racha",
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 8.sp,
+                                            fontSize = 7.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -194,22 +213,22 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     )
                                 }
                             }
 
-                            Spacer(modifier = GlanceModifier.width(4.dp))
+                            Spacer(modifier = GlanceModifier.width(3.dp))
 
                             // Stat 2: Mejor Racha
                             Box(
                                 modifier = GlanceModifier
                                     .defaultWeight()
-                                    .cornerRadius(8.dp)
+                                    .cornerRadius(6.dp)
                                     .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                                    .padding(horizontal = 3.dp, vertical = 2.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -217,7 +236,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         text = "Mejor",
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 8.sp,
+                                            fontSize = 7.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -226,22 +245,22 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     )
                                 }
                             }
 
-                            Spacer(modifier = GlanceModifier.width(4.dp))
+                            Spacer(modifier = GlanceModifier.width(3.dp))
 
                             // Stat 3: Total Días
                             Box(
                                 modifier = GlanceModifier
                                     .defaultWeight()
-                                    .cornerRadius(8.dp)
+                                    .cornerRadius(6.dp)
                                     .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                                    .padding(horizontal = 3.dp, vertical = 2.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -249,7 +268,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         text = "Total",
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 8.sp,
+                                            fontSize = 7.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -258,7 +277,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     )
@@ -266,7 +285,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                             }
                         }
 
-                        Spacer(modifier = GlanceModifier.height(4.dp))
+                        Spacer(modifier = GlanceModifier.height(3.dp))
 
                         // 3. Heatmap expandido
                         Box(

@@ -56,152 +56,45 @@ object WidgetBitmapUtils {
     }
 
     /**
-     * Creates a crisp Heatmap Grid Bitmap for ConsistencyWidget.
-     * 5 columns (weeks) x 7 rows (days per week, top-to-bottom chronological), 4 exact intensity levels.
+     * Single shared Heatmap Bitmap drawing engine for ConsistencyWidget and DashboardWidget.
+     * Derives cell size, small proportional gaps (~13%), corner radius (~20%), month labels on top,
+     * and day initials on the left from the available targetWidthPx and targetHeightPx.
+     *
+     * @param columns Total number of week columns (e.g. 10 or 14).
+     * @param monthPositions List of Pair(monthLabel, weekIndex).
+     * @param targetWidthPx Available width in pixels for drawing.
+     * @param targetHeightPx Available height in pixels for drawing.
+     * @param cellColorProvider Lambda deciding the resolved color Int for each cell (col, row).
      */
-    fun createHeatmapGridBitmap(
-        dailyRatios: List<Float>, // 35 chronological ratios (oldest to today)
-        columns: Int = 5,
-        rows: Int = 7,
-        widthPx: Int = 420,
-        heightPx: Int = 210,
-        gapPx: Float = 6f,
-        cornerRadiusPx: Float = 4f
-    ): Bitmap {
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val totalGapX = (columns - 1) * gapPx
-        val totalGapY = (rows - 1) * gapPx
-        val availableW = widthPx - totalGapX
-        val availableH = heightPx - totalGapY
-        val cellW = (availableW / columns).coerceAtLeast(4f)
-        val cellH = (availableH / rows).coerceAtLeast(4f)
-        val cellSize = minOf(cellW, cellH)
-
-        // Center horizontally and vertically within the canvas
-        val totalGridW = columns * cellSize + totalGapX
-        val totalGridH = rows * cellSize + totalGapY
-        val startX = (widthPx - totalGridW) / 2f
-        val startY = (heightPx - totalGridH) / 2f
-
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-
-        for (col in 0 until columns) {
-            val left = startX + col * (cellSize + gapPx)
-            for (row in 0 until rows) {
-                val top = startY + row * (cellSize + gapPx)
-                val dataIndex = col * rows + row
-                val ratio = if (dataIndex < dailyRatios.size) dailyRatios[dataIndex] else 0f
-
-                // Exact 4 levels: 0%, 1-33%, 34-66%, 67-100%
-                paint.color = WidgetColors.getHeatmapColorInt(ratio)
-                val rect = RectF(left, top, left + cellSize, top + cellSize)
-                canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, paint)
-            }
-        }
-
-        return bitmap
-    }
-
-    /**
-     * Creates an aggregated multi-habit 20-week x 7-day Heatmap Bitmap with month headers on top.
-     * ratioMatrix: 20 columns (weeks) x 7 rows (days per week, Mon to Sun), with completion ratio 0.0f..1.0f.
-     * monthPositions: List of Pair(monthLabel, weekIndex)
-     */
-    fun createAggregatedHeatmapBitmap(
-        ratioMatrix: List<List<Float>>,
+    fun createHeatmapBitmap(
+        columns: Int,
         monthPositions: List<Pair<String, Int>>,
-        widthPx: Int = 900,
-        heightPx: Int = 400
+        targetWidthPx: Int = 500,
+        targetHeightPx: Int = 200,
+        cellColorProvider: (col: Int, row: Int) -> Int
     ): Bitmap {
-        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val columns = ratioMatrix.size.coerceAtLeast(1)
+        val cols = columns.coerceAtLeast(1)
         val rows = 7
 
-        val monthHeaderHeightPx = 36f
-        val gapPx = 6f
-        val cornerRadiusPx = 5f
+        val dayLabelWidthPx = (targetWidthPx * 0.07f).coerceIn(18f, 26f)
+        val monthHeaderHeightPx = (targetHeightPx * 0.18f).coerceIn(16f, 24f)
 
-        val totalGapX = (columns - 1) * gapPx
-        val totalGapY = (rows - 1) * gapPx
-        val availableW = widthPx.toFloat() - totalGapX
-        val availableH = (heightPx.toFloat() - monthHeaderHeightPx) - totalGapY
+        val availW = (targetWidthPx - dayLabelWidthPx).coerceAtLeast(20f)
+        val availH = (targetHeightPx - monthHeaderHeightPx).coerceAtLeast(20f)
 
-        val cellW = availableW / columns
-        val cellH = availableH / rows
-        val cellSize = minOf(cellW, cellH).coerceAtLeast(4f)
+        val gapRatio = 0.13f
+        val cellSizeX = availW / (cols + (cols - 1) * gapRatio)
+        val cellSizeY = availH / (rows + (rows - 1) * gapRatio)
 
-        val gridW = columns * cellSize + totalGapX
-        val gridH = rows * cellSize + totalGapY
+        val cellSize = minOf(cellSizeX, cellSizeY).coerceAtLeast(4f)
+        val gapPx = (cellSize * gapRatio).coerceAtLeast(1.5f)
+        val cornerRadiusPx = (cellSize * 0.20f).coerceAtLeast(2f)
 
-        val startX = (widthPx - gridW) / 2f
-        val startY = monthHeaderHeightPx + (heightPx - monthHeaderHeightPx - gridH) / 2f
-
-        // Draw month header text
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF94A3B8.toInt() // Slate 400
-            textSize = 24f
-            textAlign = Paint.Align.LEFT
-        }
-
-        monthPositions.forEach { (monthLabel, weekIdx) ->
-            if (weekIdx in 0 until columns) {
-                val posX = startX + weekIdx * (cellSize + gapPx)
-                canvas.drawText(monthLabel, posX, monthHeaderHeightPx - 8f, textPaint)
-            }
-        }
-
-        val cellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-
-        for (col in 0 until columns) {
-            val left = startX + col * (cellSize + gapPx)
-            val weekRatios = ratioMatrix.getOrNull(col) ?: emptyList()
-            for (row in 0 until rows) {
-                val top = startY + row * (cellSize + gapPx)
-                val ratio = weekRatios.getOrNull(row) ?: 0f
-                cellPaint.color = WidgetColors.getHeatmapColorInt(ratio)
-                val rect = RectF(left, top, left + cellSize, top + cellSize)
-                canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, cellPaint)
-            }
-        }
-
-        return bitmap
-    }
-
-    /**
-     * Creates a single-habit Heatmap Bitmap with month headers on top and day initials on the left.
-     * dateMatrix: columns (weeks) x 7 rows (days per week, Mon to Sun).
-     * completedDates: Set of "yyyy-MM-dd" strings completed for this habit.
-     * habitColorInt: parsed Color int for completed cells.
-     * monthPositions: List of Pair(monthLabel, weekIndex)
-     */
-    fun createHabitHeatmapBitmap(
-        dateMatrix: List<List<String>>,
-        completedDates: Set<String>,
-        habitColorInt: Int,
-        monthPositions: List<Pair<String, Int>>
-    ): Bitmap {
-        val columns = dateMatrix.size.coerceAtLeast(1)
-        val rows = 7
-
-        val cellSize = 22f
-        val gapPx = 5f
-        val cornerRadiusPx = 4f
-        val dayLabelWidthPx = 26f
-        val monthHeaderHeightPx = 24f
-
-        val gridW = columns * cellSize + (columns - 1) * gapPx
+        val gridW = cols * cellSize + (cols - 1) * gapPx
         val gridH = rows * cellSize + (rows - 1) * gapPx
 
-        val widthPx = (dayLabelWidthPx + gridW).toInt()
-        val heightPx = (monthHeaderHeightPx + gridH).toInt()
+        val widthPx = (dayLabelWidthPx + gridW).toInt().coerceAtLeast(1)
+        val heightPx = (monthHeaderHeightPx + gridH).toInt().coerceAtLeast(1)
 
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -210,23 +103,25 @@ object WidgetBitmapUtils {
         val startY = monthHeaderHeightPx
 
         // Draw month header text
+        val monthTextSize = (monthHeaderHeightPx * 0.65f).coerceIn(10f, 16f)
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFF94A3B8.toInt() // Slate 400
-            textSize = 16f
+            textSize = monthTextSize
             textAlign = Paint.Align.LEFT
         }
 
         monthPositions.forEach { (monthLabel, weekIdx) ->
-            if (weekIdx in 0 until columns) {
+            if (weekIdx in 0 until cols) {
                 val posX = startX + weekIdx * (cellSize + gapPx)
-                canvas.drawText(monthLabel, posX, monthHeaderHeightPx - 6f, textPaint)
+                canvas.drawText(monthLabel, posX, monthHeaderHeightPx - (monthTextSize * 0.25f), textPaint)
             }
         }
 
         // Draw day initials (L, M, X, J, V, S, D) vertically centered to each row
+        val dayTextSize = (cellSize * 0.65f).coerceIn(9f, 15f)
         val dayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFF94A3B8.toInt()
-            textSize = 14f
+            textSize = dayTextSize
             textAlign = Paint.Align.CENTER
         }
         val dayMetrics = dayPaint.fontMetrics
@@ -236,24 +131,18 @@ object WidgetBitmapUtils {
         for (row in 0 until rows) {
             val cellCenterY = startY + row * (cellSize + gapPx) + (cellSize / 2f)
             val dayLetter = dayLetters.getOrNull(row) ?: ""
-            canvas.drawText(dayLetter, dayLabelWidthPx / 2f - 2f, cellCenterY - textCenterOffset, dayPaint)
+            canvas.drawText(dayLetter, dayLabelWidthPx / 2f, cellCenterY - textCenterOffset, dayPaint)
         }
 
-        // Draw cells: habitColorInt when completed, 0x38334155 (22% opacity #334155) when not
         val cellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
         }
-        val uncompletedColorInt = 0x38334155
 
-        for (col in 0 until columns) {
+        for (col in 0 until cols) {
             val left = startX + col * (cellSize + gapPx)
-            val week = dateMatrix.getOrNull(col) ?: emptyList()
             for (row in 0 until rows) {
                 val top = startY + row * (cellSize + gapPx)
-                val dateStr = week.getOrNull(row)
-                val isCompleted = dateStr != null && completedDates.contains(dateStr)
-
-                cellPaint.color = if (isCompleted) habitColorInt else uncompletedColorInt
+                cellPaint.color = cellColorProvider(col, row)
                 val rect = RectF(left, top, left + cellSize, top + cellSize)
                 canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, cellPaint)
             }
