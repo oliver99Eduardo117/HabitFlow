@@ -16,10 +16,12 @@ import com.example.repository.HabitRepository
 import com.example.util.DateUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -30,8 +32,7 @@ data class WidgetStateSnapshot(
     val totalLogs: Int = 0,
     val todayLogs: List<HabitLog> = emptyList(),
     val userStats: UserStats? = null,
-    val habitsWithStats: List<HabitWithStats> = emptyList(),
-    val timestamp: Long = System.currentTimeMillis()
+    val habitsWithStats: List<HabitWithStats> = emptyList()
 )
 
 object WidgetRepositoryProvider {
@@ -59,6 +60,7 @@ object WidgetRepositoryProvider {
      * Exposes a Flow of widget-relevant state changes combining active habits,
      * logs, user statistics, and calculated daily stats.
      */
+    @OptIn(FlowPreview::class)
     fun observeWidgetState(context: Context): Flow<WidgetStateSnapshot> {
         val repo = getRepository(context)
         val today = DateUtils.getTodayDateString()
@@ -74,10 +76,11 @@ object WidgetRepositoryProvider {
                 totalLogs = logs.size,
                 todayLogs = todayLogs,
                 userStats = stats,
-                habitsWithStats = habitsWithStats,
-                timestamp = System.currentTimeMillis()
+                habitsWithStats = habitsWithStats
             )
-        }.distinctUntilChanged()
+        }
+            .debounce(150)
+            .distinctUntilChanged()
     }
 
     /**
@@ -97,7 +100,7 @@ object WidgetRepositoryProvider {
     }
 
     /**
-     * Updates all Glance widgets immediately using GlanceAppWidgetManager and updateAppWidgetState.
+     * Updates all Glance widgets immediately using GlanceAppWidgetManager.
      */
     suspend fun updateAllWidgets(context: Context) {
         val appContext = context.applicationContext
@@ -108,7 +111,6 @@ object WidgetRepositoryProvider {
             val todayWidget = TodayWidget()
             manager.getGlanceIds(todayWidget.javaClass).forEach { glanceId ->
                 try {
-                    updateAppWidgetState(appContext, glanceId) { _ -> }
                     todayWidget.update(appContext, glanceId)
                 } catch (_: Exception) {}
             }
@@ -117,7 +119,6 @@ object WidgetRepositoryProvider {
             val progressWidget = DailyProgressWidget()
             manager.getGlanceIds(progressWidget.javaClass).forEach { glanceId ->
                 try {
-                    updateAppWidgetState(appContext, glanceId) { _ -> }
                     progressWidget.update(appContext, glanceId)
                 } catch (_: Exception) {}
             }
@@ -126,7 +127,6 @@ object WidgetRepositoryProvider {
             val streakWidget = StreakWidget()
             manager.getGlanceIds(streakWidget.javaClass).forEach { glanceId ->
                 try {
-                    updateAppWidgetState(appContext, glanceId) { _ -> }
                     streakWidget.update(appContext, glanceId)
                 } catch (_: Exception) {}
             }
@@ -135,7 +135,6 @@ object WidgetRepositoryProvider {
             val consistencyWidget = ConsistencyWidget()
             manager.getGlanceIds(consistencyWidget.javaClass).forEach { glanceId ->
                 try {
-                    updateAppWidgetState(appContext, glanceId) { _ -> }
                     consistencyWidget.update(appContext, glanceId)
                 } catch (_: Exception) {}
             }
@@ -144,7 +143,6 @@ object WidgetRepositoryProvider {
             val dashboardWidget = DashboardWidget()
             manager.getGlanceIds(dashboardWidget.javaClass).forEach { glanceId ->
                 try {
-                    updateAppWidgetState(appContext, glanceId) { _ -> }
                     dashboardWidget.update(appContext, glanceId)
                 } catch (_: Exception) {}
             }

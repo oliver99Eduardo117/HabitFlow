@@ -7,7 +7,6 @@ import com.example.network.AiChatClient
 import com.example.notification.NotificationHelper
 import com.example.util.AiProviderPreferences
 import com.example.util.DateUtils
-import com.example.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -107,7 +106,6 @@ class HabitRepository(
             NotificationHelper.cancelHabitReminder(context, habitId)
         }
 
-        WidgetUpdater.refreshAll(context)
         habitId
     }
 
@@ -121,14 +119,12 @@ class HabitRepository(
             }
         }
         habitDao.setArchivedStatus(habitId, isArchived)
-        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun deleteHabit(habitId: Long) = withContext(Dispatchers.IO) {
         NotificationHelper.cancelHabitReminder(context, habitId)
         habitDao.deleteHabitById(habitId)
         subTaskDao.deleteSubTasksForHabit(habitId)
-        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun recordHabitProgress(
@@ -160,7 +156,6 @@ class HabitRepository(
                 deductXpForCompletion(habit, existingLog?.value ?: target)
             }
         }
-        WidgetUpdater.refreshAll(context)
         earnedXp
     }
 
@@ -182,7 +177,6 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
             awardXpForCompletion(habit, habit.targetValue)
         }
-        WidgetUpdater.refreshAll(context)
         earnedXp
     }
 
@@ -230,7 +224,6 @@ class HabitRepository(
         } else {
             categoryDao.insertCategory(updatedCategory)
         }
-        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun deleteCategory(categoryName: String, fallbackCategory: String = "Rutina Personal") = withContext(Dispatchers.IO) {
@@ -252,7 +245,6 @@ class HabitRepository(
             habitDao.updateHabitsCategory(categoryName, fallbackCategory)
         }
         categoryDao.deleteCategoryByName(categoryName)
-        WidgetUpdater.refreshAll(context)
     }
 
     suspend fun getHabitsCountForCategory(categoryName: String): Int = withContext(Dispatchers.IO) {
@@ -803,9 +795,6 @@ class HabitRepository(
 
             // Reschedule Reminders for active restored habits
             NotificationHelper.rescheduleAllReminders(context)
-
-            // Refresh UI and Home Screen Widgets
-            WidgetUpdater.refreshAll(context)
 
             val summary = RestoreSummary(
                 habitsCount = restoredHabits.size,

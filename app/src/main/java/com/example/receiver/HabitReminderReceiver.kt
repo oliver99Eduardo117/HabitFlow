@@ -225,8 +225,6 @@ class HabitReminderReceiver : BroadcastReceiver() {
                     Handler(Looper.getMainLooper()).postDelayed({
                         notificationManager.cancel(notificationId)
                     }, 3000)
-
-                    com.example.widget.WidgetUpdater.refreshAll(context)
                 } catch (_: Exception) {
                 } finally {
                     pendingResult.finish()

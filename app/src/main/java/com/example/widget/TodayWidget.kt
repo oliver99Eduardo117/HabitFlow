@@ -65,14 +65,15 @@ class TodayWidget : GlanceAppWidget() {
                     .cornerRadius(16.dp)
                     .background(ColorProvider(WidgetColors.Surface))
                     .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .clickable(actionStartActivity(mainIntent))
             ) {
                 Column(
                     modifier = GlanceModifier.fillMaxSize()
                 ) {
-                    // Header row: "Hoy" (13sp medium DarkOnSurface) ... "X de Y" (11sp mutedText)
+                    // Header row: "Hoy" (13sp medium DarkOnSurface) ... "X de Y" (11sp mutedText) - opens app
                     Row(
-                        modifier = GlanceModifier.fillMaxWidth(),
+                        modifier = GlanceModifier
+                            .fillMaxWidth()
+                            .clickable(actionStartActivity(mainIntent)),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -130,7 +131,14 @@ class TodayWidget : GlanceAppWidget() {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
+                .padding(vertical = 6.dp)
+                .clickable(
+                    actionRunCallback<ToggleHabitAction>(
+                        actionParametersOf(
+                            ToggleHabitAction.habitIdKey to item.habit.id
+                        )
+                    )
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Checkbox circle: 22dp (Emerald solid if completed, SurfaceVariant if not)
@@ -140,14 +148,7 @@ class TodayWidget : GlanceAppWidget() {
                 modifier = GlanceModifier
                     .size(22.dp)
                     .cornerRadius(11.dp)
-                    .background(ColorProvider(checkColor))
-                    .clickable(
-                        actionRunCallback<ToggleHabitAction>(
-                            actionParametersOf(
-                                ToggleHabitAction.habitIdKey to item.habit.id
-                            )
-                        )
-                    ),
+                    .background(ColorProvider(checkColor)),
                 contentAlignment = Alignment.Center
             ) {
                 if (isCompleted) {
@@ -259,12 +260,10 @@ class ToggleHabitAction : ActionCallback {
         val habitId = parameters[habitIdKey] ?: return
 
         // 1. Synchronously execute real Room write and await
+        // The reactive observer in WidgetRepositoryProvider will handle widget updates with debounce & distinct check
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
         repository.toggleHabitCompletion(habitId, today)
-
-        // 2. Refresh all widgets with the committed Room state
-        WidgetUpdater.refreshAll(context)
     }
 
     companion object {

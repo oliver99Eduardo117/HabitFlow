@@ -191,11 +191,12 @@ class DashboardWidget : GlanceAppWidget() {
                             .cornerRadius(12.dp)
                             .background(ColorProvider(WidgetColors.CardSurface))
                             .padding(8.dp)
-                            .clickable(actionStartActivity(todayTabIntent))
                     ) {
                         Column(modifier = GlanceModifier.fillMaxWidth()) {
                             Row(
-                                modifier = GlanceModifier.fillMaxWidth(),
+                                modifier = GlanceModifier
+                                    .fillMaxWidth()
+                                    .clickable(actionStartActivity(todayTabIntent)),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
@@ -230,7 +231,7 @@ class DashboardWidget : GlanceAppWidget() {
                             } else {
                                 displayHabits.forEachIndexed { index, item ->
                                     if (index > 0) {
-                                        Spacer(modifier = GlanceModifier.height(4.dp))
+                                        Spacer(modifier = GlanceModifier.height(2.dp))
                                     }
                                     HabitDashboardRow(item = item)
                                 }
@@ -421,7 +422,16 @@ class DashboardWidget : GlanceAppWidget() {
         val isCompleted = item.isCompletedToday
 
         Row(
-            modifier = GlanceModifier.fillMaxWidth(),
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .clickable(
+                    actionRunCallback<ToggleHabitAction>(
+                        actionParametersOf(
+                            ToggleHabitAction.habitIdKey to item.habit.id
+                        )
+                    )
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val checkBg = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
@@ -430,14 +440,7 @@ class DashboardWidget : GlanceAppWidget() {
                 modifier = GlanceModifier
                     .size(20.dp)
                     .cornerRadius(10.dp)
-                    .background(ColorProvider(checkBg))
-                    .clickable(
-                        actionRunCallback<ToggleHabitAction>(
-                            actionParametersOf(
-                                ToggleHabitAction.habitIdKey to item.habit.id
-                            )
-                        )
-                    ),
+                    .background(ColorProvider(checkBg)),
                 contentAlignment = Alignment.Center
             ) {
                 if (isCompleted) {
