@@ -28,10 +28,6 @@ object WidgetColors {
     val Amber = BrandAmber // #F59E0B
     val Indigo = BrandPrimary // #6366F1
 
-    // Visual feedback & flash animation colors
-    val EmeraldGlow = Color(0xFF34D399)
-    val FeedbackUncheckFlash = Color(0xFF475569)
-
     // Heatmap exact 4 intensity levels
     // 0% -> Color(0xFF334155), 1-33% -> Color(0x5210B981), 34-66% -> Color(0x9E10B981), 67-100% -> #10B981
     val HeatmapLevel0 = Color(0xFF334155) // 0%

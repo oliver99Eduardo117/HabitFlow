@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -38,6 +39,7 @@ import com.example.ui.components.*
 import com.example.util.DateUtils
 import com.example.viewmodel.HabitViewModel
 import com.example.viewmodel.NavigationTab
+import com.example.viewmodel.ProgressTab
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,7 +51,6 @@ fun HabitFlowApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     // Dialog States
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -113,191 +114,141 @@ fun HabitFlowApp(
     val totalTodayHabits = maxOf(1, uiState.habits.size)
     val todayCompletionPercentage = (completedTodayCount * 100) / totalTodayHabits
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = true,
-        drawerContent = {
-            AppNavigationDrawerContent(
-                activeTab = uiState.activeTab,
-                themeMode = uiState.themeMode,
-                dynamicColor = uiState.dynamicColor,
-                userLevel = uiState.userStats.level,
-                currentXp = uiState.userStats.xp,
-                streakCount = uiState.userStats.bestStreakAllTime,
-                onSelectTab = { tab -> viewModel.setNavigationTab(tab) },
-                onSelectThemeMode = { mode -> viewModel.setThemeMode(mode) },
-                onToggleDynamicColor = { enabled -> viewModel.setDynamicColor(enabled) },
-                onOpenThemeDialog = { showThemeSwitcherDialog = true },
-                onOpenTemplates = { showTemplatePicker = true },
-                onOpenManageCategories = { showManageCategoriesDialog = true },
-                onOpenAiSettings = { showAiSettingsDialog = true },
-                onOpenArchivedHabits = { showArchivedHabitsDialog = true },
-                archivedHabitsCount = uiState.archivedHabits.size,
-                onExportJson = { viewModel.getExportJson() },
-                onExportCsv = { viewModel.getExportCsv() },
-                onRescheduleReminders = { viewModel.rescheduleAllReminders() },
-                onCloseDrawer = {
-                    coroutineScope.launch { drawerState.close() }
-                }
-            )
-        }
-    ) {
-        Scaffold(
-            modifier = modifier.fillMaxSize(),
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = {
-                Column(
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                // Top Header Row
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Top Header Row
+                    // Left: Logo & Title
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier
+                            .clickable { viewModel.setNavigationTab(NavigationTab.TODAY) }
+                            .padding(vertical = 4.dp)
                     ) {
-                        // Left: Hamburger Menu + Logo & Title
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f, fill = false)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF6366F1), Color(0xFF06B6D4))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Hamburger Menu Button (Menú del lado izquierdo)
-                            IconButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        if (drawerState.isClosed) drawerState.open() else drawerState.close()
-                                    }
-                                },
-                                modifier = Modifier.testTag("menu_drawer_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = "Abrir menú de navegación",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column {
+                            Text(
+                                text = "HabitFlow",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "$completedTodayCount/$totalTodayHabits hoy ($todayCompletionPercentage%)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Right Actions: XP Level Badge, Templates, Search, Layout Switcher
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        // Level Badge (opens progress achievements tab)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF6366F1).copy(alpha = 0.15f),
+                            modifier = Modifier.clickable {
+                                viewModel.setProgressTab(ProgressTab.ACHIEVEMENTS)
+                                viewModel.setNavigationTab(NavigationTab.PROGRESS)
                             }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            // Logo & App Name
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { viewModel.setNavigationTab(NavigationTab.TODAY) }
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(Color(0xFF6366F1), Color(0xFF06B6D4))
-                                            )
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Column {
-                                    Text(
-                                        text = "HabitFlow",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "$completedTodayCount/$totalTodayHabits hoy ($todayCompletionPercentage%)",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF10B981),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "Lv.${uiState.userStats.level}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF6366F1)
+                                )
                             }
                         }
 
-                        // Right Actions: XP Level Badge, Templates, Search, Layout Switcher
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.End
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        IconButton(
+                            onClick = { showTemplatePicker = true },
+                            modifier = Modifier.testTag("templates_button")
                         ) {
-                            // Level Badge (opens gamification tab)
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF6366F1).copy(alpha = 0.15f),
-                                modifier = Modifier.clickable {
-                                    viewModel.setNavigationTab(NavigationTab.GAMIFICATION)
-                                }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Plantillas",
+                                tint = Color(0xFFF59E0B)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showSearchField = !showSearchField },
+                            modifier = Modifier.testTag("search_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Buscar"
+                            )
+                        }
+
+                        // Layout switch dropdown in TODAY tab
+                        if (uiState.activeTab == NavigationTab.TODAY) {
+                            Box {
+                                IconButton(
+                                    onClick = { showLayoutDropdown = true },
+                                    modifier = Modifier.testTag("layout_selector_button")
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Star,
-                                        contentDescription = null,
-                                        tint = Color(0xFFF59E0B),
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "Lv.${uiState.userStats.level}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF6366F1)
+                                        imageVector = when (uiState.layoutMode) {
+                                            ViewLayoutMode.LIST -> Icons.Default.ViewList
+                                            ViewLayoutMode.HEATMAP -> Icons.Default.GridOn
+                                            ViewLayoutMode.KANBAN -> Icons.Default.ViewKanban
+                                            ViewLayoutMode.TIMELINE -> Icons.Default.Timeline
+                                        },
+                                        contentDescription = "Cambiar vista"
                                     )
                                 }
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            IconButton(
-                                onClick = { showTemplatePicker = true },
-                                modifier = Modifier.testTag("templates_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "Plantillas",
-                                    tint = Color(0xFFF59E0B)
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { showSearchField = !showSearchField },
-                                modifier = Modifier.testTag("search_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Buscar"
-                                )
-                            }
-
-                            // Layout switch dropdown in TODAY tab
-                            if (uiState.activeTab == NavigationTab.TODAY) {
-                                Box {
-                                    IconButton(
-                                        onClick = { showLayoutDropdown = true },
-                                        modifier = Modifier.testTag("layout_selector_button")
-                                    ) {
-                                        Icon(
-                                            imageVector = when (uiState.layoutMode) {
-                                                ViewLayoutMode.LIST -> Icons.Default.ViewList
-                                                ViewLayoutMode.HEATMAP -> Icons.Default.GridOn
-                                                ViewLayoutMode.KANBAN -> Icons.Default.ViewKanban
-                                                ViewLayoutMode.TIMELINE -> Icons.Default.Timeline
-                                            },
-                                            contentDescription = "Cambiar vista"
-                                        )
-                                    }
 
                                     DropdownMenu(
                                         expanded = showLayoutDropdown,
@@ -528,10 +479,17 @@ fun HabitFlowApp(
                 )
 
                 NavigationBarItem(
-                    selected = uiState.activeTab == NavigationTab.GAMIFICATION,
-                    onClick = { viewModel.setNavigationTab(NavigationTab.GAMIFICATION) },
-                    icon = { Icon(Icons.Default.EmojiEvents, contentDescription = "Logros") },
-                    label = { Text("Logros") }
+                    selected = uiState.activeTab == NavigationTab.PROGRESS,
+                    onClick = { viewModel.setNavigationTab(NavigationTab.PROGRESS) },
+                    icon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Progreso") },
+                    label = { Text("Progreso") }
+                )
+
+                NavigationBarItem(
+                    selected = uiState.activeTab == NavigationTab.SETTINGS,
+                    onClick = { viewModel.setNavigationTab(NavigationTab.SETTINGS) },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Ajustes") },
+                    label = { Text("Ajustes") }
                 )
             }
         },
@@ -580,7 +538,8 @@ fun HabitFlowApp(
                                     gainedXp = recentGainedXp,
                                     onOpenGamification = {
                                         showXpNotificationBanner = false
-                                        viewModel.setNavigationTab(NavigationTab.GAMIFICATION)
+                                        viewModel.setProgressTab(ProgressTab.ACHIEVEMENTS)
+                                        viewModel.setNavigationTab(NavigationTab.PROGRESS)
                                     },
                                     onDismiss = { showXpNotificationBanner = false }
                                 )
@@ -674,17 +633,6 @@ fun HabitFlowApp(
                     }
                 }
 
-                NavigationTab.HEATMAP -> {
-                    HeatmapView(
-                        habits = uiState.habits.map { it.habit },
-                        allLogs = uiState.allLogs,
-                        onSelectDate = { dateStr ->
-                            viewModel.setSelectedDate(dateStr)
-                            viewModel.setNavigationTab(NavigationTab.TODAY)
-                        }
-                    )
-                }
-
                 NavigationTab.CALENDAR -> {
                     CalendarMonthView(
                         selectedDate = uiState.selectedDate,
@@ -712,8 +660,10 @@ fun HabitFlowApp(
                     )
                 }
 
-                NavigationTab.ANALYTICS -> {
-                    AnalyticsScreen(
+                NavigationTab.PROGRESS -> {
+                    ProgressScreen(
+                        activeTab = uiState.activeProgressTab,
+                        onTabSelected = { viewModel.setProgressTab(it) },
                         habits = uiState.habits.map { it.habit },
                         allLogs = uiState.allLogs,
                         insights = uiState.insights,
@@ -723,12 +673,11 @@ fun HabitFlowApp(
                         onSelectThemeMode = { viewModel.setThemeMode(it) },
                         onToggleDynamicColor = { viewModel.setDynamicColor(it) },
                         onExportJson = { viewModel.getExportJson() },
-                        onExportCsv = { viewModel.getExportCsv() }
-                    )
-                }
-
-                NavigationTab.GAMIFICATION -> {
-                    GamificationDashboard(
+                        onExportCsv = { viewModel.getExportCsv() },
+                        onSelectDate = { dateStr ->
+                            viewModel.setSelectedDate(dateStr)
+                            viewModel.setNavigationTab(NavigationTab.TODAY)
+                        },
                         userStats = uiState.userStats,
                         onToggleHardcoreMode = { viewModel.toggleHardcoreMode(it) }
                     )
@@ -746,7 +695,6 @@ fun HabitFlowApp(
                 }
             }
         }
-    }
     }
 
     // Add / Edit Habit Dialog

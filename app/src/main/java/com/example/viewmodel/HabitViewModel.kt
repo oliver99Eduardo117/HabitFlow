@@ -19,12 +19,16 @@ import kotlinx.coroutines.launch
 
 enum class NavigationTab {
     TODAY,
-    HEATMAP,
     CALENDAR,
     TIMER,
-    ANALYTICS,
-    GAMIFICATION,
+    PROGRESS,
     SETTINGS
+}
+
+enum class ProgressTab {
+    ANALYTICS,
+    HEATMAP,
+    ACHIEVEMENTS
 }
 
 data class ActiveTimerState(
@@ -47,6 +51,7 @@ data class HabitUiState(
     val searchQuery: String = "",
     val layoutMode: ViewLayoutMode = ViewLayoutMode.LIST,
     val activeTab: NavigationTab = NavigationTab.TODAY,
+    val activeProgressTab: ProgressTab = ProgressTab.ANALYTICS,
     val userStats: UserStats = UserStats(),
     val allLogs: List<HabitLog> = emptyList(),
     val activeTimer: ActiveTimerState = ActiveTimerState(),
@@ -249,19 +254,36 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNavigationTab(tab: NavigationTab) {
         _uiState.update { it.copy(activeTab = tab) }
-        if (tab == NavigationTab.ANALYTICS) {
+        if (tab == NavigationTab.PROGRESS && _uiState.value.activeProgressTab == ProgressTab.ANALYTICS) {
+            refreshInsights()
+        }
+    }
+
+    fun setProgressTab(tab: ProgressTab) {
+        _uiState.update { it.copy(activeProgressTab = tab) }
+        if (tab == ProgressTab.ANALYTICS) {
             refreshInsights()
         }
     }
 
     fun handleWidgetDeepLink(tabName: String?) {
         when (tabName?.uppercase()) {
-            "ANALYTICS" -> setNavigationTab(NavigationTab.ANALYTICS)
-            "HEATMAP" -> setNavigationTab(NavigationTab.HEATMAP)
+            "ANALYTICS" -> {
+                setProgressTab(ProgressTab.ANALYTICS)
+                setNavigationTab(NavigationTab.PROGRESS)
+            }
+            "HEATMAP" -> {
+                setProgressTab(ProgressTab.HEATMAP)
+                setNavigationTab(NavigationTab.PROGRESS)
+            }
+            "GAMIFICATION" -> {
+                setProgressTab(ProgressTab.ACHIEVEMENTS)
+                setNavigationTab(NavigationTab.PROGRESS)
+            }
             "CALENDAR" -> setNavigationTab(NavigationTab.CALENDAR)
             "TIMER" -> setNavigationTab(NavigationTab.TIMER)
-            "GAMIFICATION" -> setNavigationTab(NavigationTab.GAMIFICATION)
             "TODAY" -> setNavigationTab(NavigationTab.TODAY)
+            "SETTINGS" -> setNavigationTab(NavigationTab.SETTINGS)
             else -> { /* keep default */ }
         }
     }

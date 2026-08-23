@@ -3,12 +3,12 @@ package com.example.widget
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.graphics.Bitmap
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -23,7 +23,6 @@ import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
-import androidx.glance.currentState
 import androidx.glance.layout.*
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
@@ -83,42 +82,20 @@ class DashboardWidget : GlanceAppWidget() {
         provideContent {
             val size = LocalSize.current
             val density = context.resources.displayMetrics.density
-            val prefs = currentState<Preferences>()
-            val now = System.currentTimeMillis()
 
-            // 1. Single unified resolution of effective completion state for each habit
-            val evaluatedHabits = habitsWithStats.map { item ->
-                val flashKey = booleanPreferencesKey("habit_flash_${item.habit.id}")
-                val flashTimeKey = longPreferencesKey("habit_flash_time_${item.habit.id}")
-                val completedKey = booleanPreferencesKey("habit_completed_${item.habit.id}")
-
-                val flashTime = prefs[flashTimeKey] ?: 0L
-                val isRecent = (now - flashTime) < 2000L
-                val localCompleted = if (isRecent) prefs[completedKey] else null
-                val fb = WidgetFeedbackManager.getFeedbackState(item.habit.id)
-
-                val isCompleted = localCompleted ?: fb?.isOptimisticallyCompleted ?: item.isCompletedToday
-                val isGlanceFlashing = (prefs[flashKey] == true) && (now - flashTime < 1800L)
-                val isFlashing = isGlanceFlashing || (fb?.isFlashing == true)
-
-                Triple(item, isCompleted, isFlashing)
-            }
-
-            // 2. Single unified source of truth for daily progress & counts
-            val totalHabits = evaluatedHabits.size
-            val completedHabits = evaluatedHabits.count { it.second }
+            // 1. Single unified source of truth for daily progress & counts from Room
+            val totalHabits = habitsWithStats.size
+            val completedHabits = habitsWithStats.count { it.isCompletedToday }
             val progressRatio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
             val percentage = (progressRatio * 100).toInt()
 
-            // 3. Checklist items (prioritize uncompleted then completed, take 3)
-            val uncompleted = evaluatedHabits.filter { !it.second }
-            val completed = evaluatedHabits.filter { it.second }
-            val displayHabits = (uncompleted + completed).take(3)
+            // 2. Checklist items (take 3 for Dashboard)
+            val displayHabits = habitsWithStats.take(3)
 
             // Top streak
             val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
 
-            // 4. Progress Ring Bitmap (derived strictly from percentage)
+            // 3. Progress Ring Bitmap (derived strictly from percentage)
             val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
                 percentage = percentage,
                 sizePx = 120,
@@ -251,15 +228,11 @@ class DashboardWidget : GlanceAppWidget() {
                                     modifier = GlanceModifier.padding(vertical = 2.dp)
                                 )
                             } else {
-                                displayHabits.forEachIndexed { index, (item, isCompleted, isFlashing) ->
+                                displayHabits.forEachIndexed { index, item ->
                                     if (index > 0) {
                                         Spacer(modifier = GlanceModifier.height(4.dp))
                                     }
-                                    HabitDashboardRow(
-                                        item = item,
-                                        isCompleted = isCompleted,
-                                        isFlashing = isFlashing
-                                    )
+                                    HabitDashboardRow(item = item)
                                 }
                             }
                         }
@@ -444,22 +417,14 @@ class DashboardWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun HabitDashboardRow(
-        item: HabitWithStats,
-        isCompleted: Boolean,
-        isFlashing: Boolean
-    ) {
+    private fun HabitDashboardRow(item: HabitWithStats) {
+        val isCompleted = item.isCompletedToday
+
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox circle with visual flash feedback
-            val checkBg = when {
-                isFlashing && isCompleted -> WidgetColors.EmeraldGlow
-                isFlashing && !isCompleted -> WidgetColors.FeedbackUncheckFlash
-                isCompleted -> WidgetColors.Emerald
-                else -> WidgetColors.SurfaceVariant
-            }
+            val checkBg = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
 
             Box(
                 modifier = GlanceModifier
@@ -469,8 +434,7 @@ class DashboardWidget : GlanceAppWidget() {
                     .clickable(
                         actionRunCallback<ToggleHabitAction>(
                             actionParametersOf(
-                                ToggleHabitAction.habitIdKey to item.habit.id,
-                                ToggleHabitAction.currentCompletedKey to isCompleted
+                                ToggleHabitAction.habitIdKey to item.habit.id
                             )
                         )
                     ),
@@ -487,14 +451,49 @@ class DashboardWidget : GlanceAppWidget() {
 
             Spacer(modifier = GlanceModifier.width(6.dp))
 
-            // Habit Title - Green when completed/marked, white when uncompleted
+            // Habit Icon (~13dp or letter fallback Box)
+            val iconRes = WidgetIconHelper.getWidgetIconRes(item.habit.iconName)
+            val habitColor = try {
+                Color(android.graphics.Color.parseColor(item.habit.colorHex))
+            } catch (_: Exception) {
+                WidgetColors.Indigo
+            }
+
+            if (iconRes != null) {
+                Image(
+                    provider = ImageProvider(iconRes),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(ColorProvider(habitColor)),
+                    modifier = GlanceModifier.size(13.dp)
+                )
+            } else {
+                Box(
+                    modifier = GlanceModifier
+                        .size(13.dp)
+                        .cornerRadius(3.dp)
+                        .background(ColorProvider(habitColor.copy(alpha = 0.25f))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = item.habit.title.take(1).uppercase(),
+                        style = TextStyle(
+                            color = ColorProvider(habitColor),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+            Spacer(modifier = GlanceModifier.width(5.dp))
+
+            // Habit Title - TextSecondary when completed, TextPrimary when uncompleted
             Text(
                 text = item.habit.title,
                 maxLines = 1,
                 style = TextStyle(
                     color = ColorProvider(
                         if (isCompleted) {
-                            WidgetColors.EmeraldGlow
+                            WidgetColors.TextSecondary
                         } else {
                             WidgetColors.TextPrimary
                         }
@@ -506,13 +505,7 @@ class DashboardWidget : GlanceAppWidget() {
             )
 
             // Right side: flame + streak, or "—"
-            val effectiveStreak = if (isCompleted && !item.isCompletedToday) {
-                item.currentStreak + 1
-            } else if (!isCompleted && item.isCompletedToday) {
-                (item.currentStreak - 1).coerceAtLeast(0)
-            } else {
-                item.currentStreak
-            }
+            val effectiveStreak = item.currentStreak
 
             if (effectiveStreak > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

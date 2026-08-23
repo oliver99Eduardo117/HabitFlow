@@ -2,8 +2,10 @@ package com.example.widget
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -61,16 +63,54 @@ class StreakWidget : GlanceAppWidget() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = topStreakHabit.habit.title,
-                            maxLines = 1,
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.TextSecondary),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Normal,
-                                textAlign = TextAlign.Center
+                        val iconRes = WidgetIconHelper.getWidgetIconRes(topStreakHabit.habit.iconName)
+                        val habitComposeColor = try {
+                            Color(android.graphics.Color.parseColor(topStreakHabit.habit.colorHex))
+                        } catch (_: Exception) {
+                            WidgetColors.Indigo
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (iconRes != null) {
+                                Image(
+                                    provider = ImageProvider(iconRes),
+                                    contentDescription = topStreakHabit.habit.title,
+                                    colorFilter = ColorFilter.tint(ColorProvider(habitComposeColor)),
+                                    modifier = GlanceModifier.size(13.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = GlanceModifier
+                                        .size(13.dp)
+                                        .cornerRadius(3.dp)
+                                        .background(ColorProvider(habitComposeColor.copy(alpha = 0.25f))),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = topStreakHabit.habit.title.take(1).uppercase(),
+                                        style = TextStyle(
+                                            color = ColorProvider(habitComposeColor),
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                }
+                            }
+                            Spacer(modifier = GlanceModifier.width(4.dp))
+                            Text(
+                                text = topStreakHabit.habit.title,
+                                maxLines = 1,
+                                style = TextStyle(
+                                    color = ColorProvider(WidgetColors.TextSecondary),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    textAlign = TextAlign.Center
+                                )
                             )
-                        )
+                        }
 
                         Spacer(modifier = GlanceModifier.height(2.dp))
 
