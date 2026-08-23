@@ -84,8 +84,51 @@ class DashboardWidget : GlanceAppWidget() {
             val size = LocalSize.current
             val density = context.resources.displayMetrics.density
             val prefs = currentState<Preferences>()
+            val now = System.currentTimeMillis()
 
-            // Adaptive heatmap generation based on available width & height
+            // 1. Single unified resolution of effective completion state for each habit
+            val evaluatedHabits = habitsWithStats.map { item ->
+                val flashKey = booleanPreferencesKey("habit_flash_${item.habit.id}")
+                val flashTimeKey = longPreferencesKey("habit_flash_time_${item.habit.id}")
+                val completedKey = booleanPreferencesKey("habit_completed_${item.habit.id}")
+
+                val flashTime = prefs[flashTimeKey] ?: 0L
+                val isRecent = (now - flashTime) < 2000L
+                val localCompleted = if (isRecent) prefs[completedKey] else null
+                val fb = WidgetFeedbackManager.getFeedbackState(item.habit.id)
+
+                val isCompleted = localCompleted ?: fb?.isOptimisticallyCompleted ?: item.isCompletedToday
+                val isGlanceFlashing = (prefs[flashKey] == true) && (now - flashTime < 1800L)
+                val isFlashing = isGlanceFlashing || (fb?.isFlashing == true)
+
+                Triple(item, isCompleted, isFlashing)
+            }
+
+            // 2. Single unified source of truth for daily progress & counts
+            val totalHabits = evaluatedHabits.size
+            val completedHabits = evaluatedHabits.count { it.second }
+            val progressRatio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
+            val percentage = (progressRatio * 100).toInt()
+
+            // 3. Checklist items (prioritize uncompleted then completed, take 3)
+            val uncompleted = evaluatedHabits.filter { !it.second }
+            val completed = evaluatedHabits.filter { it.second }
+            val displayHabits = (uncompleted + completed).take(3)
+
+            // Top streak
+            val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
+
+            // 4. Progress Ring Bitmap (derived strictly from percentage)
+            val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
+                percentage = percentage,
+                sizePx = 120,
+                strokeWidthPx = 12f,
+                trackColorInt = 0xFF334155.toInt(),
+                progressColorInt = 0xFF6366F1.toInt(),
+                completedColorInt = 0xFF10B981.toInt()
+            )
+
+            // 5. Adaptive heatmap generation based on available width & height
             val weeks = if (size.width < 220.dp) 10 else 14
             val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
             val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
@@ -96,17 +139,21 @@ class DashboardWidget : GlanceAppWidget() {
 
             val ratioMatrix: List<List<Float>> = dateMatrix.map { week ->
                 week.map { dateStr ->
-                    val dayLogs = allLogsByDate[dateStr] ?: emptyList()
-                    val doneCount = dayLogs.count { log ->
-                        val habit = activeHabitsById[log.habitId]
-                        habit != null && log.value >= habit.targetValue
-                    }
-                    if (activeHabits.isNotEmpty()) {
-                        (doneCount.toFloat() / totalActive).coerceIn(0f, 1f)
-                    } else if (doneCount > 0) {
-                        1f
+                    if (dateStr == today) {
+                        progressRatio
                     } else {
-                        0f
+                        val dayLogs = allLogsByDate[dateStr] ?: emptyList()
+                        val doneCount = dayLogs.count { log ->
+                            val habit = activeHabitsById[log.habitId]
+                            habit != null && log.value >= habit.targetValue
+                        }
+                        if (activeHabits.isNotEmpty()) {
+                            (doneCount.toFloat() / totalActive).coerceIn(0f, 1f)
+                        } else if (doneCount > 0) {
+                            1f
+                        } else {
+                            0f
+                        }
                     }
                 }
             }
@@ -126,50 +173,12 @@ class DashboardWidget : GlanceAppWidget() {
                 }
             )
 
-            // Top card items (up to 3 habits: prioritize uncompleted then completed)
-            val uncompleted = habitsWithStats.filter {
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                val isDone = localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-                !isDone
-            }
-            val completed = habitsWithStats.filter {
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                val isDone = localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-                isDone
-            }
-            val displayHabits = (uncompleted + completed).take(3)
-
-            // Top streak
-            val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
-
-            // Daily progress
-            val totalHabits = habitsWithStats.size
-            val completedHabits = habitsWithStats.count {
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-            }
-            val progressRatio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
-            val percentage = (progressRatio * 100).toInt()
-
-            val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
-                percentage = percentage,
-                sizePx = 120,
-                strokeWidthPx = 12f,
-                trackColorInt = 0xFF334155.toInt(),
-                progressColorInt = 0xFF6366F1.toInt(),
-                completedColorInt = 0xFF10B981.toInt()
-            )
-
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
                     .cornerRadius(20.dp)
                     .background(ColorProvider(WidgetColors.Background))
                     .padding(10.dp)
-                    .clickable(actionStartActivity(todayTabIntent))
             ) {
                 Column(modifier = GlanceModifier.fillMaxSize()) {
                     // Outer Header: "Hoy, 20 ago" and "HABITFLOW"
@@ -242,11 +251,15 @@ class DashboardWidget : GlanceAppWidget() {
                                     modifier = GlanceModifier.padding(vertical = 2.dp)
                                 )
                             } else {
-                                displayHabits.forEachIndexed { index, item ->
+                                displayHabits.forEachIndexed { index, (item, isCompleted, isFlashing) ->
                                     if (index > 0) {
                                         Spacer(modifier = GlanceModifier.height(4.dp))
                                     }
-                                    HabitDashboardRow(item = item, prefs = prefs)
+                                    HabitDashboardRow(
+                                        item = item,
+                                        isCompleted = isCompleted,
+                                        isFlashing = isFlashing
+                                    )
                                 }
                             }
                         }
@@ -431,20 +444,11 @@ class DashboardWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun HabitDashboardRow(item: HabitWithStats, prefs: Preferences) {
-        val flashKey = booleanPreferencesKey("habit_flash_${item.habit.id}")
-        val flashTimeKey = longPreferencesKey("habit_flash_time_${item.habit.id}")
-        val completedKey = booleanPreferencesKey("habit_completed_${item.habit.id}")
-
-        val flashTime = prefs[flashTimeKey] ?: 0L
-        val isRecentFlash = (System.currentTimeMillis() - flashTime) < 1800L
-        val isGlanceFlashing = (prefs[flashKey] == true) && isRecentFlash
-        val localCompleted = prefs[completedKey]
-
-        val feedback = WidgetFeedbackManager.getFeedbackState(item.habit.id)
-        val isCompleted = localCompleted ?: feedback?.isOptimisticallyCompleted ?: item.isCompletedToday
-        val isFlashing = isGlanceFlashing || (feedback?.isFlashing == true)
-
+    private fun HabitDashboardRow(
+        item: HabitWithStats,
+        isCompleted: Boolean,
+        isFlashing: Boolean
+    ) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -473,13 +477,10 @@ class DashboardWidget : GlanceAppWidget() {
                 contentAlignment = Alignment.Center
             ) {
                 if (isCompleted) {
-                    Text(
-                        text = "✓",
-                        style = TextStyle(
-                            color = ColorProvider(WidgetColors.TextPrimary),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Image(
+                        provider = ImageProvider(R.drawable.ic_widget_check),
+                        contentDescription = null,
+                        modifier = GlanceModifier.size(12.dp)
                     )
                 }
             }

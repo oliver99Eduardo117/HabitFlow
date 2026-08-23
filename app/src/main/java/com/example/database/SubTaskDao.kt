@@ -29,4 +29,7 @@ interface SubTaskDao {
 
     @Query("DELETE FROM sub_tasks WHERE habitId = :habitId")
     suspend fun deleteSubTasksForHabit(habitId: Long)
+
+    @Query("DELETE FROM sub_tasks")
+    suspend fun deleteAllSubTasks()
 }

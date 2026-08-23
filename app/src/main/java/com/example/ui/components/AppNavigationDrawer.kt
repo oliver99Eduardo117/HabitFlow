@@ -275,6 +275,17 @@ fun AppNavigationDrawerContent(
             )
 
             NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                label = { Text("Ajustes & Copias") },
+                selected = activeTab == NavigationTab.SETTINGS,
+                onClick = {
+                    onSelectTab(NavigationTab.SETTINGS)
+                    onCloseDrawer()
+                },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+
+            NavigationDrawerItem(
                 icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFF59E0B)) },
                 label = { Text("Galería de Plantillas") },
                 selected = false,
@@ -511,12 +522,12 @@ fun AppNavigationDrawerContent(
             )
 
             DrawerSettingsItem(
-                title = "Gestión de Datos & Copias",
-                subtitle = "Exportar registros en JSON o CSV",
+                title = "Copias de Seguridad & Restauración",
+                subtitle = "Backup y Restore en JSON local o CSV",
                 icon = Icons.Default.CloudSync,
                 testTag = "drawer_data_management_item",
                 onClick = {
-                    onSelectTab(NavigationTab.ANALYTICS)
+                    onSelectTab(NavigationTab.SETTINGS)
                     onCloseDrawer()
                 }
             )

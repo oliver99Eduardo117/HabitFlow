@@ -53,28 +53,34 @@ class TodayWidget : GlanceAppWidget() {
 
         provideContent {
             val prefs = currentState<Preferences>()
+            val now = System.currentTimeMillis()
 
-            // Prioritize uncompleted habits first, then completed ones up to 4 total
-            val uncompleted = allHabitsWithStats.filter { 
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                val isDone = localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-                !isDone
+            // 1. Single unified resolution of effective completion state for each habit
+            val evaluatedHabits = allHabitsWithStats.map { item ->
+                val flashKey = booleanPreferencesKey("habit_flash_${item.habit.id}")
+                val flashTimeKey = longPreferencesKey("habit_flash_time_${item.habit.id}")
+                val completedKey = booleanPreferencesKey("habit_completed_${item.habit.id}")
+
+                val flashTime = prefs[flashTimeKey] ?: 0L
+                val isRecent = (now - flashTime) < 2000L
+                val localCompleted = if (isRecent) prefs[completedKey] else null
+                val fb = WidgetFeedbackManager.getFeedbackState(item.habit.id)
+
+                val isCompleted = localCompleted ?: fb?.isOptimisticallyCompleted ?: item.isCompletedToday
+                val isGlanceFlashing = (prefs[flashKey] == true) && (now - flashTime < 1800L)
+                val isFlashing = isGlanceFlashing || (fb?.isFlashing == true)
+
+                Triple(item, isCompleted, isFlashing)
             }
-            val completed = allHabitsWithStats.filter { 
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                val isDone = localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-                isDone
-            }
+
+            // 2. Single unified source of truth for daily progress & counts
+            val totalHabits = evaluatedHabits.size
+            val completedCount = evaluatedHabits.count { it.second }
+
+            // 3. Checklist items (prioritize uncompleted then completed, take 4)
+            val uncompleted = evaluatedHabits.filter { !it.second }
+            val completed = evaluatedHabits.filter { it.second }
             val displayHabits = (uncompleted + completed).take(4)
-
-            val totalHabits = allHabitsWithStats.size
-            val completedCount = allHabitsWithStats.count { 
-                val localCompleted = prefs[booleanPreferencesKey("habit_completed_${it.habit.id}")]
-                val fb = WidgetFeedbackManager.getFeedbackState(it.habit.id)
-                localCompleted ?: fb?.isOptimisticallyCompleted ?: it.isCompletedToday
-            }
 
             val mainIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -137,11 +143,15 @@ class TodayWidget : GlanceAppWidget() {
                             modifier = GlanceModifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            displayHabits.forEachIndexed { index, item ->
+                            displayHabits.forEachIndexed { index, (item, isCompleted, isFlashing) ->
                                 if (index > 0) {
                                     Spacer(modifier = GlanceModifier.height(10.dp))
                                 }
-                                HabitRowItem(item = item, prefs = prefs)
+                                HabitRowItem(
+                                    item = item,
+                                    isCompleted = isCompleted,
+                                    isFlashing = isFlashing
+                                )
                             }
                         }
                     }
@@ -151,20 +161,11 @@ class TodayWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun HabitRowItem(item: HabitWithStats, prefs: Preferences) {
-        val flashKey = booleanPreferencesKey("habit_flash_${item.habit.id}")
-        val flashTimeKey = longPreferencesKey("habit_flash_time_${item.habit.id}")
-        val completedKey = booleanPreferencesKey("habit_completed_${item.habit.id}")
-
-        val flashTime = prefs[flashTimeKey] ?: 0L
-        val isRecentFlash = (System.currentTimeMillis() - flashTime) < 1800L
-        val isGlanceFlashing = (prefs[flashKey] == true) && isRecentFlash
-        val localCompleted = prefs[completedKey]
-
-        val feedback = WidgetFeedbackManager.getFeedbackState(item.habit.id)
-        val isCompleted = localCompleted ?: feedback?.isOptimisticallyCompleted ?: item.isCompletedToday
-        val isFlashing = isGlanceFlashing || (feedback?.isFlashing == true)
-
+    private fun HabitRowItem(
+        item: HabitWithStats,
+        isCompleted: Boolean,
+        isFlashing: Boolean
+    ) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -193,13 +194,10 @@ class TodayWidget : GlanceAppWidget() {
                 contentAlignment = Alignment.Center
             ) {
                 if (isCompleted) {
-                    Text(
-                        text = "✓",
-                        style = TextStyle(
-                            color = ColorProvider(WidgetColors.TextPrimary),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Image(
+                        provider = ImageProvider(R.drawable.ic_widget_check),
+                        contentDescription = null,
+                        modifier = GlanceModifier.size(13.dp)
                     )
                 }
             }
@@ -302,6 +300,15 @@ class ToggleHabitAction : ActionCallback {
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
         repository.toggleHabitCompletion(habitId, today)
+
+        // Clean up the optimistic preference key now that Room is updated
+        try {
+            updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                prefs.toMutablePreferences().apply {
+                    remove(booleanPreferencesKey("habit_completed_$habitId"))
+                }
+            }
+        } catch (_: Exception) {}
 
         // 4. Update all widgets across the launcher
         WidgetUpdater.refreshAll(context)

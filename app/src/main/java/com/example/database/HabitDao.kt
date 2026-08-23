@@ -44,4 +44,10 @@ interface HabitDao {
 
     @Query("SELECT COUNT(*) FROM habits WHERE category = :categoryName")
     suspend fun getHabitsCountByCategory(categoryName: String): Int
+
+    @Query("DELETE FROM habits")
+    suspend fun deleteAllHabits()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHabits(habits: List<Habit>)
 }

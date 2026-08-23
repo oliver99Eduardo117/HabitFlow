@@ -35,4 +35,10 @@ interface HabitLogDao {
 
     @Query("SELECT COUNT(*) FROM habit_logs")
     suspend fun getTotalCheckInCount(): Int
+
+    @Query("DELETE FROM habit_logs")
+    suspend fun deleteAllLogs()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLogs(logs: List<HabitLog>)
 }

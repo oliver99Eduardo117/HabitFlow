@@ -118,7 +118,7 @@ class ConsistencyWidget : GlanceAppWidget() {
                     Column(
                         modifier = GlanceModifier.fillMaxSize()
                     ) {
-                        // 1. Encabezado compacto: Avatar 28dp + Habit info + Streak
+                        // 1. Encabezado compacto: Avatar 28dp + Habit info
                         Row(
                             modifier = GlanceModifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -153,34 +153,15 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     )
                                 )
                                 Spacer(modifier = GlanceModifier.height(1.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = habit.category,
-                                        maxLines = 1,
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Normal
-                                        )
+                                Text(
+                                    text = habit.category,
+                                    maxLines = 1,
+                                    style = TextStyle(
+                                        color = ColorProvider(WidgetColors.TextSecondary),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Normal
                                     )
-                                    if (currentStreak > 0) {
-                                        Spacer(modifier = GlanceModifier.width(5.dp))
-                                        Image(
-                                            provider = ImageProvider(R.drawable.ic_widget_flame),
-                                            contentDescription = "Racha",
-                                            modifier = GlanceModifier.size(10.dp)
-                                        )
-                                        Spacer(modifier = GlanceModifier.width(2.dp))
-                                        Text(
-                                            text = "$currentStreak d",
-                                            style = TextStyle(
-                                                color = ColorProvider(Color(0xFFF97316)),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        )
-                                    }
-                                }
+                                )
                             }
                         }
 

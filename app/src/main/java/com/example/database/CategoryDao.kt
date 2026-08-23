@@ -26,4 +26,10 @@ interface CategoryDao {
 
     @Query("DELETE FROM categories WHERE name = :name")
     suspend fun deleteCategoryByName(name: String)
+
+    @Query("DELETE FROM categories")
+    suspend fun deleteAllCategories()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCategoriesReplace(categories: List<Category>)
 }

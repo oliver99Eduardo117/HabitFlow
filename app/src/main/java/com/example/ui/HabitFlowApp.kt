@@ -733,6 +733,17 @@ fun HabitFlowApp(
                         onToggleHardcoreMode = { viewModel.toggleHardcoreMode(it) }
                     )
                 }
+
+                NavigationTab.SETTINGS -> {
+                    SettingsScreen(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        onOpenThemeDialog = { showThemeSwitcherDialog = true },
+                        onOpenAiSettings = { showAiSettingsDialog = true },
+                        onOpenManageCategories = { showManageCategoriesDialog = true },
+                        onOpenArchivedHabits = { showArchivedHabitsDialog = true }
+                    )
+                }
             }
         }
     }

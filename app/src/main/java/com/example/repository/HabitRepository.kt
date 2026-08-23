@@ -525,9 +525,24 @@ class HabitRepository(
         val stats = userStatsDao.getUserStats() ?: UserStats()
 
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("appName", "HabitFlow")
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
 
+        // 1. Categories
+        val categoriesArray = JSONArray()
+        categories.forEach { c ->
+            val obj = JSONObject().apply {
+                put("name", c.name)
+                put("colorHex", c.colorHex)
+                put("iconName", c.iconName)
+                put("isDefault", c.isDefault)
+            }
+            categoriesArray.put(obj)
+        }
+        root.put("categories", categoriesArray)
+
+        // 2. Habits
         val habitsArray = JSONArray()
         habits.forEach { h ->
             val obj = JSONObject().apply {
@@ -539,29 +554,274 @@ class HabitRepository(
                 put("iconName", h.iconName)
                 put("frequencyDays", JSONArray(h.frequencyDays))
                 put("isArchived", h.isArchived)
+                put("orderIndex", h.orderIndex)
                 put("unit", h.unit)
                 put("targetValue", h.targetValue.toDouble())
+                put("progressiveIncrease", h.progressiveIncrease.toDouble())
                 put("hasTimer", h.hasTimer)
                 put("timerDurationMinutes", h.timerDurationMinutes)
                 put("reminderTime", h.reminderTime ?: "")
+                put("reminderMinutesAdvance", h.reminderMinutesAdvance)
+                put("reminderCustomMessage", h.reminderCustomMessage ?: "")
+                if (h.parentHabitId != null) put("parentHabitId", h.parentHabitId)
+                if (h.dependencyHabitId != null) put("dependencyHabitId", h.dependencyHabitId)
+                put("lastMilestoneStreakClaimed", h.lastMilestoneStreakClaimed)
+                put("createdAt", h.createdAt)
             }
             habitsArray.put(obj)
         }
         root.put("habits", habitsArray)
 
+        // 3. SubTasks
+        val subTasksArray = JSONArray()
+        subTasks.forEach { st ->
+            val obj = JSONObject().apply {
+                put("id", st.id)
+                put("habitId", st.habitId)
+                put("title", st.title)
+                put("isCompleted", st.isCompleted)
+                put("date", st.date)
+            }
+            subTasksArray.put(obj)
+        }
+        root.put("subTasks", subTasksArray)
+
+        // 4. Habit Logs
         val logsArray = JSONArray()
         logs.forEach { l ->
             val obj = JSONObject().apply {
+                put("id", l.id)
                 put("habitId", l.habitId)
                 put("date", l.date)
                 put("value", l.value.toDouble())
                 put("notes", l.notes)
+                put("timestamp", l.timestamp)
             }
             logsArray.put(obj)
         }
         root.put("logs", logsArray)
 
+        // 5. User Stats & Gamification
+        val statsObj = JSONObject().apply {
+            put("id", stats.id)
+            put("xp", stats.xp)
+            put("level", stats.level)
+            put("totalCheckIns", stats.totalCheckIns)
+            put("bestStreakAllTime", stats.bestStreakAllTime)
+            put("isHardcoreMode", stats.isHardcoreMode)
+            put("unlockedBadgeIds", JSONArray(stats.unlockedBadgeIds))
+            put("totalFocusMinutes", stats.totalFocusMinutes)
+            put("lastActiveDate", stats.lastActiveDate)
+        }
+        root.put("userStats", statsObj)
+
         root.toString(2)
+    }
+
+    /**
+     * Parses a JSON backup string to provide a preview summary without modifying the database.
+     */
+    fun parseBackupPreview(jsonString: String): Result<RestoreSummary> {
+        return try {
+            val root = JSONObject(jsonString)
+            val habitsArray = root.optJSONArray("habits") ?: JSONArray()
+            val logsArray = root.optJSONArray("logs") ?: JSONArray()
+            val subTasksArray = root.optJSONArray("subTasks") ?: JSONArray()
+            val categoriesArray = root.optJSONArray("categories") ?: JSONArray()
+            val statsObj = root.optJSONObject("userStats")
+
+            val xp = statsObj?.optInt("xp", 0) ?: 0
+            val level = statsObj?.optInt("level", 1) ?: 1
+            val isHardcore = statsObj?.optBoolean("isHardcoreMode", false) ?: false
+            val exportedAt = root.optLong("exportedAt", System.currentTimeMillis())
+
+            Result.success(
+                RestoreSummary(
+                    habitsCount = habitsArray.length(),
+                    logsCount = logsArray.length(),
+                    subTasksCount = subTasksArray.length(),
+                    categoriesCount = categoriesArray.length(),
+                    userLevel = level,
+                    userXp = xp,
+                    exportedAt = exportedAt,
+                    isHardcoreMode = isHardcore
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Atomically restores the Room database from a valid JSON backup string.
+     */
+    suspend fun restoreDataJson(jsonString: String): Result<RestoreSummary> = withContext(Dispatchers.IO) {
+        try {
+            val root = JSONObject(jsonString)
+            val habitsArray = root.optJSONArray("habits") ?: JSONArray()
+            val logsArray = root.optJSONArray("logs") ?: JSONArray()
+            val subTasksArray = root.optJSONArray("subTasks") ?: JSONArray()
+            val categoriesArray = root.optJSONArray("categories") ?: JSONArray()
+            val statsObj = root.optJSONObject("userStats")
+
+            // Parse Categories
+            val restoredCategories = mutableListOf<Category>()
+            for (i in 0 until categoriesArray.length()) {
+                val obj = categoriesArray.getJSONObject(i)
+                restoredCategories.add(
+                    Category(
+                        name = obj.getString("name"),
+                        colorHex = obj.optString("colorHex", "#6366F1"),
+                        iconName = obj.optString("iconName", "category"),
+                        isDefault = obj.optBoolean("isDefault", false)
+                    )
+                )
+            }
+
+            // Parse Habits
+            val restoredHabits = mutableListOf<Habit>()
+            for (i in 0 until habitsArray.length()) {
+                val obj = habitsArray.getJSONObject(i)
+                val freqJson = obj.optJSONArray("frequencyDays")
+                val freqDays = if (freqJson != null) {
+                    (0 until freqJson.length()).map { freqJson.getInt(it) }
+                } else listOf(1, 2, 3, 4, 5, 6, 7)
+
+                restoredHabits.add(
+                    Habit(
+                        id = obj.optLong("id", 0L),
+                        title = obj.getString("title"),
+                        description = obj.optString("description", ""),
+                        category = obj.optString("category", "General"),
+                        colorHex = obj.optString("colorHex", "#6366F1"),
+                        iconName = obj.optString("iconName", "check_circle"),
+                        frequencyDays = freqDays,
+                        isArchived = obj.optBoolean("isArchived", false),
+                        orderIndex = obj.optInt("orderIndex", i),
+                        unit = obj.optString("unit", ""),
+                        targetValue = obj.optDouble("targetValue", 1.0).toFloat(),
+                        progressiveIncrease = obj.optDouble("progressiveIncrease", 0.0).toFloat(),
+                        hasTimer = obj.optBoolean("hasTimer", false),
+                        timerDurationMinutes = obj.optInt("timerDurationMinutes", 25),
+                        reminderTime = obj.optString("reminderTime", "").takeIf { it.isNotBlank() },
+                        reminderMinutesAdvance = obj.optInt("reminderMinutesAdvance", 0),
+                        reminderCustomMessage = obj.optString("reminderCustomMessage", "").takeIf { it.isNotBlank() },
+                        parentHabitId = if (obj.has("parentHabitId") && !obj.isNull("parentHabitId")) obj.getLong("parentHabitId") else null,
+                        dependencyHabitId = if (obj.has("dependencyHabitId") && !obj.isNull("dependencyHabitId")) obj.getLong("dependencyHabitId") else null,
+                        lastMilestoneStreakClaimed = obj.optInt("lastMilestoneStreakClaimed", 0),
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                    )
+                )
+            }
+
+            // Parse SubTasks
+            val restoredSubTasks = mutableListOf<SubTask>()
+            for (i in 0 until subTasksArray.length()) {
+                val obj = subTasksArray.getJSONObject(i)
+                restoredSubTasks.add(
+                    SubTask(
+                        id = obj.optLong("id", 0L),
+                        habitId = obj.getLong("habitId"),
+                        title = obj.getString("title"),
+                        isCompleted = obj.optBoolean("isCompleted", false),
+                        date = obj.optString("date", "")
+                    )
+                )
+            }
+
+            // Parse Habit Logs
+            val restoredLogs = mutableListOf<HabitLog>()
+            for (i in 0 until logsArray.length()) {
+                val obj = logsArray.getJSONObject(i)
+                restoredLogs.add(
+                    HabitLog(
+                        id = obj.optLong("id", 0L),
+                        habitId = obj.getLong("habitId"),
+                        date = obj.getString("date"),
+                        value = obj.optDouble("value", 1.0).toFloat(),
+                        notes = obj.optString("notes", ""),
+                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                    )
+                )
+            }
+
+            // Parse User Stats
+            val restoredStats = if (statsObj != null) {
+                val badgesJson = statsObj.optJSONArray("unlockedBadgeIds")
+                val badgeList = if (badgesJson != null) {
+                    (0 until badgesJson.length()).map { badgesJson.getString(it) }
+                } else emptyList()
+
+                UserStats(
+                    id = 1,
+                    xp = statsObj.optInt("xp", 120),
+                    level = statsObj.optInt("level", 1),
+                    totalCheckIns = statsObj.optInt("totalCheckIns", restoredLogs.size),
+                    bestStreakAllTime = statsObj.optInt("bestStreakAllTime", 0),
+                    isHardcoreMode = statsObj.optBoolean("isHardcoreMode", false),
+                    unlockedBadgeIds = badgeList,
+                    totalFocusMinutes = statsObj.optInt("totalFocusMinutes", 0),
+                    lastActiveDate = statsObj.optString("lastActiveDate", DateUtils.getTodayDateString())
+                )
+            } else {
+                UserStats(id = 1, totalCheckIns = restoredLogs.size)
+            }
+
+            // Execute Transactional Database Reset & Insertion
+            database.runInTransaction {
+                kotlinx.coroutines.runBlocking {
+                    // 1. Clear existing data
+                    subTaskDao.deleteAllSubTasks()
+                    habitLogDao.deleteAllLogs()
+                    habitDao.deleteAllHabits()
+                    if (restoredCategories.isNotEmpty()) {
+                        categoryDao.deleteAllCategories()
+                    }
+
+                    // 2. Insert Restored Data
+                    if (restoredCategories.isNotEmpty()) {
+                        categoryDao.insertCategoriesReplace(restoredCategories)
+                    } else {
+                        categoryDao.insertCategories(DefaultCategories)
+                    }
+
+                    if (restoredHabits.isNotEmpty()) {
+                        habitDao.insertHabits(restoredHabits)
+                    }
+
+                    if (restoredSubTasks.isNotEmpty()) {
+                        subTaskDao.insertSubTasks(restoredSubTasks)
+                    }
+
+                    if (restoredLogs.isNotEmpty()) {
+                        habitLogDao.insertLogs(restoredLogs)
+                    }
+
+                    userStatsDao.insertOrUpdate(restoredStats)
+                }
+            }
+
+            // Reschedule Reminders for active restored habits
+            NotificationHelper.rescheduleAllReminders(context)
+
+            // Refresh UI and Home Screen Widgets
+            WidgetUpdater.refreshAll(context)
+
+            val summary = RestoreSummary(
+                habitsCount = restoredHabits.size,
+                logsCount = restoredLogs.size,
+                subTasksCount = restoredSubTasks.size,
+                categoriesCount = if (restoredCategories.isNotEmpty()) restoredCategories.size else DefaultCategories.size,
+                userLevel = restoredStats.level,
+                userXp = restoredStats.xp,
+                exportedAt = root.optLong("exportedAt", System.currentTimeMillis()),
+                isHardcoreMode = restoredStats.isHardcoreMode
+            )
+
+            Result.success(summary)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     /**
@@ -584,3 +844,14 @@ class HabitRepository(
         sb.toString()
     }
 }
+
+data class RestoreSummary(
+    val habitsCount: Int,
+    val logsCount: Int,
+    val subTasksCount: Int,
+    val categoriesCount: Int,
+    val userLevel: Int,
+    val userXp: Int,
+    val exportedAt: Long = 0L,
+    val isHardcoreMode: Boolean = false
+)

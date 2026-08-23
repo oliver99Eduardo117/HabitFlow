@@ -23,7 +23,8 @@ enum class NavigationTab {
     CALENDAR,
     TIMER,
     ANALYTICS,
-    GAMIFICATION
+    GAMIFICATION,
+    SETTINGS
 }
 
 data class ActiveTimerState(
@@ -466,6 +467,32 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun getExportJson(): String = repository.exportDataJson()
     suspend fun getExportCsv(): String = repository.exportDataCsv()
+
+    fun parseBackupPreview(jsonString: String): Result<com.example.repository.RestoreSummary> {
+        return repository.parseBackupPreview(jsonString)
+    }
+
+    fun restoreDatabaseFromJson(
+        jsonString: String,
+        onComplete: (Result<com.example.repository.RestoreSummary>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = repository.restoreDataJson(jsonString)
+            _uiState.update { it.copy(isLoading = false) }
+            result.onSuccess { summary ->
+                _uiState.update {
+                    it.copy(snackbarMessage = "✅ Base de datos restaurada: ${summary.habitsCount} hábitos y ${summary.logsCount} check-ins cargados con éxito")
+                }
+                triggerHaptic(longArrayOf(0, 40, 60, 40))
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(snackbarMessage = "❌ Error al restaurar: ${error.localizedMessage ?: "Formato JSON inválido"}")
+                }
+            }
+            onComplete(result)
+        }
+    }
 
     fun setThemeMode(mode: ThemeMode) {
         themePrefs.setThemeMode(mode)
