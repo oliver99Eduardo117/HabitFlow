@@ -7,6 +7,7 @@ import com.example.network.AiChatClient
 import com.example.notification.NotificationHelper
 import com.example.util.AiProviderPreferences
 import com.example.util.DateUtils
+import com.example.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
@@ -106,6 +107,7 @@ class HabitRepository(
             NotificationHelper.cancelHabitReminder(context, habitId)
         }
 
+        WidgetUpdater.scheduleRefresh(context)
         habitId
     }
 
@@ -119,12 +121,14 @@ class HabitRepository(
             }
         }
         habitDao.setArchivedStatus(habitId, isArchived)
+        WidgetUpdater.scheduleRefresh(context)
     }
 
     suspend fun deleteHabit(habitId: Long) = withContext(Dispatchers.IO) {
         NotificationHelper.cancelHabitReminder(context, habitId)
         habitDao.deleteHabitById(habitId)
         subTaskDao.deleteSubTasksForHabit(habitId)
+        WidgetUpdater.scheduleRefresh(context)
     }
 
     suspend fun recordHabitProgress(
@@ -156,6 +160,7 @@ class HabitRepository(
                 deductXpForCompletion(habit, existingLog?.value ?: target)
             }
         }
+        WidgetUpdater.scheduleRefresh(context)
         earnedXp
     }
 
@@ -177,6 +182,7 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
             awardXpForCompletion(habit, habit.targetValue)
         }
+        WidgetUpdater.scheduleRefresh(context)
         earnedXp
     }
 
@@ -795,6 +801,9 @@ class HabitRepository(
 
             // Reschedule Reminders for active restored habits
             NotificationHelper.rescheduleAllReminders(context)
+
+            // Coalesced widget refresh after data restore
+            WidgetUpdater.scheduleRefresh(context)
 
             val summary = RestoreSummary(
                 habitsCount = restoredHabits.size,

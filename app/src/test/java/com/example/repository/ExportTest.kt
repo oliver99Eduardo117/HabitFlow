@@ -66,7 +66,7 @@ class ExportTest {
         assertTrue(jsonString.isNotEmpty())
 
         val rootObject = JSONObject(jsonString)
-        assertEquals(1, rootObject.getInt("version"))
+        assertEquals(2, rootObject.getInt("version"))
         assertTrue(rootObject.has("exportedAt"))
 
         val habitsArray = rootObject.getJSONArray("habits")

@@ -260,10 +260,12 @@ class ToggleHabitAction : ActionCallback {
         val habitId = parameters[habitIdKey] ?: return
 
         // 1. Synchronously execute real Room write and await
-        // The reactive observer in WidgetRepositoryProvider will handle widget updates with debounce & distinct check
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
         repository.toggleHabitCompletion(habitId, today)
+
+        // 2. Refresh all widgets with awaited guarantee before onAction returns
+        WidgetUpdater.refreshAll(context)
     }
 
     companion object {

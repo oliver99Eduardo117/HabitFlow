@@ -4,18 +4,27 @@ import android.content.Context
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 object WidgetUpdater {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var pendingJob: Job? = null
 
-    fun enqueueRefresh(context: Context) {
+    fun scheduleRefresh(context: Context) {
         val appContext = context.applicationContext
-        scope.launch {
+        pendingJob?.cancel()
+        pendingJob = scope.launch {
+            delay(120)
             refreshAll(appContext)
         }
+    }
+
+    fun enqueueRefresh(context: Context) {
+        scheduleRefresh(context)
     }
 
     suspend fun refreshAll(context: Context) {
@@ -25,27 +34,37 @@ object WidgetUpdater {
             launch {
                 try {
                     TodayWidget().updateAll(appContext)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    android.util.Log.e("HabitFlowWidget", "Error refreshing TodayWidget", e)
+                }
             }
             launch {
                 try {
                     DailyProgressWidget().updateAll(appContext)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    android.util.Log.e("HabitFlowWidget", "Error refreshing DailyProgressWidget", e)
+                }
             }
             launch {
                 try {
                     StreakWidget().updateAll(appContext)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    android.util.Log.e("HabitFlowWidget", "Error refreshing StreakWidget", e)
+                }
             }
             launch {
                 try {
                     ConsistencyWidget().updateAll(appContext)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    android.util.Log.e("HabitFlowWidget", "Error refreshing ConsistencyWidget", e)
+                }
             }
             launch {
                 try {
                     DashboardWidget().updateAll(appContext)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    android.util.Log.e("HabitFlowWidget", "Error refreshing DashboardWidget", e)
+                }
             }
         }
     }

@@ -1,12 +1,9 @@
 package com.example.widget
 
 import android.content.Context
-import android.content.Intent
+import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import com.example.database.AppDatabase
 import com.example.model.Habit
 import com.example.model.HabitLog
@@ -16,12 +13,10 @@ import com.example.repository.HabitRepository
 import com.example.util.DateUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -36,6 +31,8 @@ data class WidgetStateSnapshot(
 )
 
 object WidgetRepositoryProvider {
+    private const val TAG = "HabitFlowWidget"
+
     @Volatile
     private var repository: HabitRepository? = null
 
@@ -60,7 +57,6 @@ object WidgetRepositoryProvider {
      * Exposes a Flow of widget-relevant state changes combining active habits,
      * logs, user statistics, and calculated daily stats.
      */
-    @OptIn(FlowPreview::class)
     fun observeWidgetState(context: Context): Flow<WidgetStateSnapshot> {
         val repo = getRepository(context)
         val today = DateUtils.getTodayDateString()
@@ -78,9 +74,7 @@ object WidgetRepositoryProvider {
                 userStats = stats,
                 habitsWithStats = habitsWithStats
             )
-        }
-            .debounce(150)
-            .distinctUntilChanged()
+        }.distinctUntilChanged()
     }
 
     /**
@@ -109,44 +103,65 @@ object WidgetRepositoryProvider {
 
             // Today Widget
             val todayWidget = TodayWidget()
-            manager.getGlanceIds(todayWidget.javaClass).forEach { glanceId ->
+            val todayIds = manager.getGlanceIds(todayWidget.javaClass)
+            Log.d(TAG, "updateAllWidgets: ${todayIds.size} glanceIds encontrados para TodayWidget")
+            todayIds.forEach { glanceId ->
                 try {
                     todayWidget.update(appContext, glanceId)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo al actualizar widget (TodayWidget, glanceId=$glanceId)", e)
+                }
             }
 
             // Daily Progress Widget
             val progressWidget = DailyProgressWidget()
-            manager.getGlanceIds(progressWidget.javaClass).forEach { glanceId ->
+            val progressIds = manager.getGlanceIds(progressWidget.javaClass)
+            Log.d(TAG, "updateAllWidgets: ${progressIds.size} glanceIds encontrados para DailyProgressWidget")
+            progressIds.forEach { glanceId ->
                 try {
                     progressWidget.update(appContext, glanceId)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo al actualizar widget (DailyProgressWidget, glanceId=$glanceId)", e)
+                }
             }
 
             // Streak Widget
             val streakWidget = StreakWidget()
-            manager.getGlanceIds(streakWidget.javaClass).forEach { glanceId ->
+            val streakIds = manager.getGlanceIds(streakWidget.javaClass)
+            Log.d(TAG, "updateAllWidgets: ${streakIds.size} glanceIds encontrados para StreakWidget")
+            streakIds.forEach { glanceId ->
                 try {
                     streakWidget.update(appContext, glanceId)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo al actualizar widget (StreakWidget, glanceId=$glanceId)", e)
+                }
             }
 
             // Consistency Widget
             val consistencyWidget = ConsistencyWidget()
-            manager.getGlanceIds(consistencyWidget.javaClass).forEach { glanceId ->
+            val consistencyIds = manager.getGlanceIds(consistencyWidget.javaClass)
+            Log.d(TAG, "updateAllWidgets: ${consistencyIds.size} glanceIds encontrados para ConsistencyWidget")
+            consistencyIds.forEach { glanceId ->
                 try {
                     consistencyWidget.update(appContext, glanceId)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo al actualizar widget (ConsistencyWidget, glanceId=$glanceId)", e)
+                }
             }
 
             // Dashboard Widget
             val dashboardWidget = DashboardWidget()
-            manager.getGlanceIds(dashboardWidget.javaClass).forEach { glanceId ->
+            val dashboardIds = manager.getGlanceIds(dashboardWidget.javaClass)
+            Log.d(TAG, "updateAllWidgets: ${dashboardIds.size} glanceIds encontrados para DashboardWidget")
+            dashboardIds.forEach { glanceId ->
                 try {
                     dashboardWidget.update(appContext, glanceId)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo al actualizar widget (DashboardWidget, glanceId=$glanceId)", e)
+                }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Fallo al actualizar widget (error general en updateAllWidgets)", e)
             WidgetUpdater.refreshAll(appContext)
         }
     }
