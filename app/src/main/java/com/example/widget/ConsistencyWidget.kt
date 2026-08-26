@@ -41,11 +41,7 @@ class ConsistencyWidget : GlanceAppWidget() {
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
 
-        val habitsWithStats = try {
-            repository.getHabitsWithStats(today).first()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
 
         val allLogs = try {
             repository.allLogs.first()

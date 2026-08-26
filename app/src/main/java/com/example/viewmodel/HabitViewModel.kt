@@ -13,6 +13,7 @@ import com.example.repository.HabitRepository
 import com.example.service.TimerManager
 import com.example.util.DateUtils
 import com.example.util.ThemePreferences
+import com.example.widget.WidgetUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -304,6 +305,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleHabitCompletion(habitId: Long, date: String = _uiState.value.selectedDate) {
         viewModelScope.launch {
             val gainedXp = repository.toggleHabitCompletion(habitId, date)
+            WidgetUpdater.scheduleRefresh(getApplication())
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
             val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP 🔥" else "Hábito desmarcado"
             _uiState.update { it.copy(snackbarMessage = message) }

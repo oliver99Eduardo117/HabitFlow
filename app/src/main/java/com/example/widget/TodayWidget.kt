@@ -42,13 +42,8 @@ class TodayWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<Preferences> = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
-        val allHabitsWithStats = try {
-            repository.getHabitsWithStats(today).first()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val allHabitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
 
         provideContent {
             val totalHabits = allHabitsWithStats.size
@@ -135,7 +130,8 @@ class TodayWidget : GlanceAppWidget() {
                 .clickable(
                     actionRunCallback<ToggleHabitAction>(
                         actionParametersOf(
-                            ToggleHabitAction.habitIdKey to item.habit.id
+                            ToggleHabitAction.habitIdKey to item.habit.id,
+                            ToggleHabitAction.widgetTypeKey to "today"
                         )
                     )
                 ),
@@ -258,18 +254,43 @@ class ToggleHabitAction : ActionCallback {
         parameters: ActionParameters
     ) {
         val habitId = parameters[habitIdKey] ?: return
+        val widgetType = parameters[widgetTypeKey] ?: "today"
 
+        val t0 = System.currentTimeMillis()
         // 1. Synchronously execute real Room write and await
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
         repository.toggleHabitCompletion(habitId, today)
+        val tDb = System.currentTimeMillis() - t0
 
-        // 2. Refresh all widgets with awaited guarantee before onAction returns
-        WidgetUpdater.refreshAll(context)
+        // Invalidate cache immediately after write so the touched instance gets fresh data
+        WidgetRepositoryProvider.invalidateHabitsCache()
+
+        // 2. Phase 1: Update ONLY the touched widget instance (awaited)
+        val tUpdateStart = System.currentTimeMillis()
+        try {
+            if (widgetType == "dashboard") {
+                DashboardWidget().update(context, glanceId)
+            } else {
+                TodayWidget().update(context, glanceId)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HabitFlowWidget", "Error updating touched widget instance ($widgetType)", e)
+        }
+        val tTouched = System.currentTimeMillis() - tUpdateStart
+
+        android.util.Log.d(
+            "HabitFlowWidget",
+            "ToggleHabitAction: DB toggle took ${tDb}ms, Touched widget ($widgetType) update took ${tTouched}ms"
+        )
+
+        // 3. Phase 2: Schedule the rest without blocking
+        WidgetUpdater.scheduleRefresh(context)
     }
 
     companion object {
         val habitIdKey = ActionParameters.Key<Long>("habit_id")
+        val widgetTypeKey = ActionParameters.Key<String>("widget_type")
     }
 }
 

@@ -49,11 +49,7 @@ class DashboardWidget : GlanceAppWidget() {
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
 
-        val habitsWithStats = try {
-            repository.getHabitsWithStats(today).first()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
 
         val allLogs = try {
             repository.allLogs.first()
@@ -428,7 +424,8 @@ class DashboardWidget : GlanceAppWidget() {
                 .clickable(
                     actionRunCallback<ToggleHabitAction>(
                         actionParametersOf(
-                            ToggleHabitAction.habitIdKey to item.habit.id
+                            ToggleHabitAction.habitIdKey to item.habit.id,
+                            ToggleHabitAction.widgetTypeKey to "dashboard"
                         )
                     )
                 ),

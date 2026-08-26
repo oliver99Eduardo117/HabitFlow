@@ -182,7 +182,6 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
             awardXpForCompletion(habit, habit.targetValue)
         }
-        WidgetUpdater.scheduleRefresh(context)
         earnedXp
     }
 

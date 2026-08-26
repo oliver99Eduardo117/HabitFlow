@@ -205,6 +205,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
                     }
 
                     val gainedXp = repository.toggleHabitCompletion(habitId, today)
+                    com.example.widget.WidgetUpdater.scheduleRefresh(context)
                     if (gainedXp > 0) {
                         repository.checkStreakMilestone(habitId)
                     }

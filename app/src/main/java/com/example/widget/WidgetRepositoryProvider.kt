@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.atomic.AtomicBoolean
@@ -36,9 +37,42 @@ object WidgetRepositoryProvider {
     @Volatile
     private var repository: HabitRepository? = null
 
+    private data class CachedHabitsStats(
+        val date: String,
+        val timestamp: Long,
+        val data: List<HabitWithStats>
+    )
+
+    @Volatile
+    private var habitsWithStatsCache: CachedHabitsStats? = null
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var observerJob: Job? = null
     private val isObserving = AtomicBoolean(false)
+
+    fun invalidateHabitsCache() {
+        habitsWithStatsCache = null
+    }
+
+    suspend fun getHabitsWithStatsCached(context: Context, today: String): List<HabitWithStats> {
+        val currentCache = habitsWithStatsCache
+        val now = System.currentTimeMillis()
+        if (currentCache != null && currentCache.date == today && (now - currentCache.timestamp) < 500) {
+            return currentCache.data
+        }
+        val repo = getRepository(context)
+        val freshData = try {
+            repo.getHabitsWithStats(today).first()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        habitsWithStatsCache = CachedHabitsStats(
+            date = today,
+            timestamp = System.currentTimeMillis(),
+            data = freshData
+        )
+        return freshData
+    }
 
     fun getRepository(context: Context): HabitRepository {
         return repository ?: synchronized(this) {

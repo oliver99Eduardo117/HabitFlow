@@ -30,13 +30,8 @@ import kotlinx.coroutines.flow.first
 class StreakWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
-        val habitsWithStats = try {
-            repository.getHabitsWithStats(today).first()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
 
         val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
         val hasActiveStreak = topStreakHabit != null && topStreakHabit.currentStreak > 0
