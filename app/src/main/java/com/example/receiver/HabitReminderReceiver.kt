@@ -11,7 +11,6 @@ import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.database.AppDatabase
-import com.example.model.HabitLog
 import com.example.notification.NotificationHelper
 import com.example.util.DateUtils
 import com.example.widget.WidgetRepositoryProvider
@@ -31,7 +30,14 @@ class HabitReminderReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_TIME_CHANGED -> {
-                NotificationHelper.rescheduleAllReminders(context)
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        NotificationHelper.rescheduleAllRemindersSync(context)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
                 return
             }
 
@@ -54,8 +60,10 @@ class HabitReminderReceiver : BroadcastReceiver() {
     private fun handleTriggerReminder(context: Context, intent: Intent) {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
+            val habitId = intent.getLongExtra(EXTRA_HABIT_ID, 0L)
+            val isSnooze = intent.getBooleanExtra(EXTRA_IS_SNOOZE, false)
+            var decisionCompleted = false
             try {
-                val habitId = intent.getLongExtra(EXTRA_HABIT_ID, 0L)
                 val fallbackTitle = intent.getStringExtra(EXTRA_HABIT_TITLE) ?: "Tus hábitos de hoy"
                 val fallbackDesc = intent.getStringExtra(EXTRA_HABIT_DESC) ?: ""
                 val fallbackCategory = intent.getStringExtra(EXTRA_HABIT_CATEGORY) ?: "General"
@@ -65,12 +73,11 @@ class HabitReminderReceiver : BroadcastReceiver() {
                 val fallbackHasTimer = intent.getBooleanExtra(EXTRA_HABIT_HAS_TIMER, false)
                 val fallbackTimerMins = intent.getIntExtra(EXTRA_HABIT_TIMER_MINS, 25)
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, habitId.toInt())
-                val isSnooze = intent.getBooleanExtra(EXTRA_IS_SNOOZE, false)
 
-                val repository = WidgetRepositoryProvider.getRepository(context)
-                val habit = if (habitId > 0) repository.getHabitById(habitId) else null
+                val db = AppDatabase.getInstance(context)
+                val habit = if (habitId > 0) db.habitDao().getHabitById(habitId) else null
                 val today = DateUtils.getTodayDateString()
-                val log = if (habitId > 0) repository.getLogForHabitAndDate(habitId, today) else null
+                val log = if (habitId > 0) db.habitLogDao().getLogForHabitAndDate(habitId, today) else null
 
                 val calendar = Calendar.getInstance()
                 val todayIso = NotificationHelper.getIsoDayOfWeek(calendar.get(Calendar.DAY_OF_WEEK))
@@ -205,8 +212,26 @@ class HabitReminderReceiver : BroadcastReceiver() {
                 if (!isSnooze && habitId > 0 && habit != null && !habit.reminderTime.isNullOrBlank()) {
                     NotificationHelper.scheduleHabitReminder(context, habit)
                 }
+
+                decisionCompleted = true
             } catch (_: Exception) {
             } finally {
+                if (!decisionCompleted && !isSnooze && habitId > 0) {
+                    val habitTime = intent.getStringExtra(EXTRA_HABIT_TIME)
+                    val advanceMinutes = intent.getIntExtra(EXTRA_HABIT_ADVANCE, 0)
+                    val freqDaysArray = intent.getIntArrayExtra(EXTRA_HABIT_FREQ_DAYS)
+                    val frequencyDays = freqDaysArray?.toList() ?: listOf(1, 2, 3, 4, 5, 6, 7)
+                    if (!habitTime.isNullOrBlank()) {
+                        NotificationHelper.scheduleReminderFromRaw(
+                            context = context,
+                            habitId = habitId,
+                            reminderTime = habitTime,
+                            advanceMinutes = advanceMinutes,
+                            frequencyDays = frequencyDays,
+                            sourceIntent = intent
+                        )
+                    }
+                }
                 pendingResult.finish()
             }
         }
@@ -236,7 +261,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
                     }
 
                     val gainedXp = repository.toggleHabitCompletion(habitId, today)
-                    com.example.widget.WidgetUpdater.scheduleRefresh(context)
+                    WidgetUpdater.scheduleRefresh(context)
                     if (gainedXp > 0) {
                         repository.checkStreakMilestone(habitId)
                     }
@@ -299,6 +324,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
         const val EXTRA_HABIT_COLOR = "extra_habit_color"
         const val EXTRA_HABIT_TIME = "extra_habit_time"
         const val EXTRA_HABIT_ADVANCE = "extra_habit_advance"
+        const val EXTRA_HABIT_FREQ_DAYS = "extra_habit_freq_days"
         const val EXTRA_HABIT_CUSTOM_MSG = "extra_habit_custom_msg"
         const val EXTRA_HABIT_HAS_TIMER = "extra_habit_has_timer"
         const val EXTRA_HABIT_TIMER_MINS = "extra_habit_timer_mins"

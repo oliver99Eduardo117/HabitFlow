@@ -79,6 +79,7 @@ object NotificationHelper {
             putExtra(HabitReminderReceiver.EXTRA_HABIT_CUSTOM_MSG, habit.reminderCustomMessage)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_HAS_TIMER, habit.hasTimer)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_TIMER_MINS, habit.timerDurationMinutes)
+            putExtra(HabitReminderReceiver.EXTRA_HABIT_FREQ_DAYS, habit.frequencyDays.toIntArray())
             putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, reminderRequestCode(habit.id))
         }
 
@@ -96,6 +97,62 @@ object NotificationHelper {
             frequencyDays = if (habit.frequencyDays.isNotEmpty()) habit.frequencyDays else listOf(1, 2, 3, 4, 5, 6, 7)
         )
 
+        setAlarmInternal(alarmManager, targetTriggerTime, pendingIntent)
+    }
+
+    /**
+     * Fallback scheduler that restores a recurring reminder using raw extras when DB read fails.
+     */
+    fun scheduleReminderFromRaw(
+        context: Context,
+        habitId: Long,
+        reminderTime: String,
+        advanceMinutes: Int,
+        frequencyDays: List<Int>,
+        sourceIntent: Intent
+    ) {
+        val parts = reminderTime.split(":")
+        if (parts.size != 2) return
+
+        val hour = parts[0].toIntOrNull() ?: return
+        val minute = parts[1].toIntOrNull() ?: return
+
+        createNotificationChannel(context)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        val intent = Intent(context, HabitReminderReceiver::class.java).apply {
+            action = HabitReminderReceiver.ACTION_TRIGGER_REMINDER
+            sourceIntent.extras?.let { putExtras(it) }
+            putExtra(HabitReminderReceiver.EXTRA_HABIT_ID, habitId)
+            putExtra(HabitReminderReceiver.EXTRA_HABIT_TIME, reminderTime)
+            putExtra(HabitReminderReceiver.EXTRA_HABIT_ADVANCE, advanceMinutes)
+            putExtra(HabitReminderReceiver.EXTRA_HABIT_FREQ_DAYS, frequencyDays.toIntArray())
+            putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, reminderRequestCode(habitId))
+            putExtra(HabitReminderReceiver.EXTRA_IS_SNOOZE, false)
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            reminderRequestCode(habitId),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val targetTriggerTime = calculateNextTriggerMillis(
+            hour = hour,
+            minute = minute,
+            advanceMinutes = advanceMinutes,
+            frequencyDays = if (frequencyDays.isNotEmpty()) frequencyDays else listOf(1, 2, 3, 4, 5, 6, 7)
+        )
+
+        setAlarmInternal(alarmManager, targetTriggerTime, pendingIntent)
+    }
+
+    private fun setAlarmInternal(
+        alarmManager: AlarmManager,
+        targetTriggerTime: Long,
+        pendingIntent: PendingIntent
+    ) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (alarmManager.canScheduleExactAlarms()) {
@@ -191,6 +248,14 @@ object NotificationHelper {
      */
     private fun reminderRequestCode(habitId: Long): Int = habitId.toInt()
     private fun snoozeRequestCode(habitId: Long): Int = (habitId + 10000).toInt()
+
+    private val remindersEnsured = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun ensureRemindersScheduled(context: Context) {
+        if (remindersEnsured.compareAndSet(false, true)) {
+            rescheduleAllReminders(context)
+        }
+    }
 
     fun cancelHabitReminder(context: Context, habitId: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -292,19 +357,26 @@ object NotificationHelper {
     }
 
     /**
+     * Reschedules all active habit reminders synchronously in a coroutine.
+     */
+    suspend fun rescheduleAllRemindersSync(context: Context) {
+        try {
+            val db = AppDatabase.getInstance(context)
+            val activeHabits = db.habitDao().getActiveHabits().first()
+            for (habit in activeHabits) {
+                if (!habit.reminderTime.isNullOrBlank()) {
+                    scheduleHabitReminder(context, habit)
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
+    /**
      * Reschedules all active habit reminders (called after device reboot, timezone change, or app start).
      */
     fun rescheduleAllReminders(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.getInstance(context)
-                val activeHabits = db.habitDao().getActiveHabits().first()
-                for (habit in activeHabits) {
-                    if (!habit.reminderTime.isNullOrBlank()) {
-                        scheduleHabitReminder(context, habit)
-                    }
-                }
-            } catch (_: Exception) { }
+            rescheduleAllRemindersSync(context)
         }
     }
 

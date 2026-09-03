@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.notification.NotificationHelper
 import com.example.ui.HabitFlowApp
 import com.example.ui.theme.HabitFlowTheme
 import com.example.viewmodel.HabitViewModel
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.ensureRemindersScheduled(this)
         enableEdgeToEdge()
 
         // Initialize Widget DataObserver
