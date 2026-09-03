@@ -160,6 +160,9 @@ class HabitRepository(
                 deductXpForCompletion(habit, existingLog?.value ?: target)
             }
         }
+        if (isNowCompleted && date == DateUtils.getTodayDateString()) {
+            NotificationHelper.dismissActiveReminder(context, habitId)
+        }
         WidgetUpdater.scheduleRefresh(context)
         earnedXp
     }
@@ -180,6 +183,9 @@ class HabitRepository(
                 timestamp = System.currentTimeMillis()
             )
             habitLogDao.insertOrUpdateLog(log)
+            if (date == DateUtils.getTodayDateString()) {
+                NotificationHelper.dismissActiveReminder(context, habitId)
+            }
             awardXpForCompletion(habit, habit.targetValue)
         }
         earnedXp

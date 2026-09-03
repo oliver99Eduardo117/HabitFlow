@@ -79,12 +79,12 @@ object NotificationHelper {
             putExtra(HabitReminderReceiver.EXTRA_HABIT_CUSTOM_MSG, habit.reminderCustomMessage)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_HAS_TIMER, habit.hasTimer)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_TIMER_MINS, habit.timerDurationMinutes)
-            putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, habit.id.toInt())
+            putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, reminderRequestCode(habit.id))
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            habit.id.toInt(),
+            reminderRequestCode(habit.id),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -189,6 +189,9 @@ object NotificationHelper {
     /**
      * Cancels scheduled alarm and removes active notification.
      */
+    private fun reminderRequestCode(habitId: Long): Int = habitId.toInt()
+    private fun snoozeRequestCode(habitId: Long): Int = (habitId + 10000).toInt()
+
     fun cancelHabitReminder(context: Context, habitId: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, HabitReminderReceiver::class.java).apply {
@@ -196,14 +199,38 @@ object NotificationHelper {
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            habitId.toInt(),
+            reminderRequestCode(habitId),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
+
+        cancelSnoozeAlarm(context, habitId)
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(habitId.toInt())
+        notificationManager.cancel(reminderRequestCode(habitId))
+    }
+
+    fun cancelSnoozeAlarm(context: Context, habitId: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, HabitReminderReceiver::class.java).apply {
+            action = HabitReminderReceiver.ACTION_TRIGGER_REMINDER
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            snoozeRequestCode(habitId),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
+
+    fun dismissActiveReminder(context: Context, habitId: Long) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(reminderRequestCode(habitId))
+        cancelSnoozeAlarm(context, habitId)
     }
 
     /**
@@ -230,13 +257,13 @@ object NotificationHelper {
             putExtra(HabitReminderReceiver.EXTRA_HABIT_COLOR, habitColor)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_HAS_TIMER, hasTimer)
             putExtra(HabitReminderReceiver.EXTRA_HABIT_TIMER_MINS, timerMins)
-            putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, habitId.toInt())
+            putExtra(HabitReminderReceiver.EXTRA_NOTIFICATION_ID, reminderRequestCode(habitId))
             putExtra(HabitReminderReceiver.EXTRA_IS_SNOOZE, true)
         }
 
         val snoozePendingIntent = PendingIntent.getBroadcast(
             context,
-            (habitId + 10000).toInt(),
+            snoozeRequestCode(habitId),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -261,7 +288,7 @@ object NotificationHelper {
 
         // Dismiss current notification
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(habitId.toInt())
+        notificationManager.cancel(reminderRequestCode(habitId))
     }
 
     /**
