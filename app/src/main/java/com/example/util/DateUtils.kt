@@ -2,59 +2,73 @@ package com.example.util
 
 import com.example.model.Habit
 import com.example.model.HabitLog
-import java.text.SimpleDateFormat
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 object DateUtils {
-    private val isoFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    private val displayFormat = SimpleDateFormat("EEEE, d 'de' MMMM", Locale("es", "ES"))
-    private val shortMonthFormat = SimpleDateFormat("MMM", Locale("es", "ES"))
-    private val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale("es", "ES"))
+    private val localeSpanish = Locale.forLanguageTag("es-ES")
+
+    private val isoFormat: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE // "yyyy-MM-dd"
+    private val displayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", localeSpanish)
+    private val shortMonthFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM", localeSpanish)
+    private val monthYearFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", localeSpanish)
+
+    private fun Calendar.toLocalDate(): LocalDate {
+        return try {
+            val zoneId = timeZone?.toZoneId() ?: ZoneId.systemDefault()
+            toInstant().atZone(zoneId).toLocalDate()
+        } catch (_: Exception) {
+            LocalDate.of(
+                get(Calendar.YEAR),
+                get(Calendar.MONTH) + 1,
+                get(Calendar.DAY_OF_MONTH)
+            )
+        }
+    }
 
     fun getTodayDateString(): String {
-        return isoFormat.format(Date())
+        return LocalDate.now().format(isoFormat)
     }
 
     fun formatDateForDisplay(dateString: String): String {
         return try {
-            val date = isoFormat.parse(dateString) ?: Date()
-            displayFormat.format(date).replaceFirstChar { it.uppercase() }
+            val date = LocalDate.parse(dateString, isoFormat)
+            date.format(displayFormat).replaceFirstChar { it.uppercase() }
         } catch (_: Exception) {
             dateString
         }
     }
 
     fun formatMonthYear(calendar: Calendar): String {
-        return monthYearFormat.format(calendar.time).replaceFirstChar { it.uppercase() }
+        val localDate = calendar.toLocalDate()
+        return localDate.format(monthYearFormat).replaceFirstChar { it.uppercase() }
     }
 
     fun getDayOfWeek(dateString: String): Int {
         return try {
-            val date = isoFormat.parse(dateString) ?: Date()
-            val cal = Calendar.getInstance().apply { time = date }
-            var day = cal.get(Calendar.DAY_OF_WEEK) - 1 // 1=Sun in Java, let's map: Mon=1, Tue=2.. Sun=7
-            if (day == 0) day = 7
-            day
+            LocalDate.parse(dateString, isoFormat).dayOfWeek.value // Lun=1 .. Dom=7
         } catch (_: Exception) {
             1
         }
     }
 
     fun getDaysAgoDateString(daysAgo: Int): String {
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
-        return isoFormat.format(cal.time)
+        return LocalDate.now().minusDays(daysAgo.toLong()).format(isoFormat)
     }
 
     fun getPastNDaysDateStrings(count: Int): List<String> {
-        val list = mutableListOf<String>()
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, -(count - 1))
+        val list = ArrayList<String>(count)
+        var date = LocalDate.now().minusDays((count - 1).toLong())
         for (i in 0 until count) {
-            list.add(isoFormat.format(cal.time))
-            cal.add(Calendar.DAY_OF_YEAR, 1)
+            list.add(date.format(isoFormat))
+            date = date.plusDays(1)
         }
         return list
     }
@@ -64,21 +78,18 @@ object DateUtils {
      * Every week column starts on Monday (index 0) and ends on Sunday (index 6).
      */
     fun getHeatmapDateMatrix(weeks: Int = 18): List<List<String>> {
-        val cal = Calendar.getInstance()
+        val today = LocalDate.now()
         // Align to current week's Sunday (end of current ISO week)
-        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-        val daysUntilSunday = if (dayOfWeek == Calendar.SUNDAY) 0 else (Calendar.SATURDAY - dayOfWeek + 1)
-        cal.add(Calendar.DAY_OF_YEAR, daysUntilSunday)
-
+        val endSunday = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
         val totalDays = weeks * 7
-        cal.add(Calendar.DAY_OF_YEAR, -(totalDays - 1))
+        var startDate = endSunday.minusDays((totalDays - 1).toLong())
 
-        val matrix = mutableListOf<MutableList<String>>()
+        val matrix = ArrayList<List<String>>(weeks)
         for (w in 0 until weeks) {
-            val weekDays = mutableListOf<String>()
+            val weekDays = ArrayList<String>(7)
             for (d in 0 until 7) {
-                weekDays.add(isoFormat.format(cal.time))
-                cal.add(Calendar.DAY_OF_YEAR, 1)
+                weekDays.add(startDate.format(isoFormat))
+                startDate = startDate.plusDays(1)
             }
             matrix.add(weekDays)
         }
@@ -88,8 +99,6 @@ object DateUtils {
     fun calculateMonthPositionsForHabit(dateMatrix: List<List<String>>): List<Pair<String, Int>> {
         if (dateMatrix.isEmpty()) return emptyList()
         val positions = mutableListOf<Pair<String, Int>>()
-        val iso = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val monthFmt = SimpleDateFormat("MMM", Locale("es", "ES"))
 
         var lastMonth = ""
         var lastAddedWeek = -10
@@ -99,8 +108,8 @@ object DateUtils {
             val targetDay = firstOfMonth ?: week.getOrNull(3) ?: week.firstOrNull()
             val monthStr = if (targetDay != null) {
                 try {
-                    val d = iso.parse(targetDay)
-                    if (d != null) monthFmt.format(d).replaceFirstChar { it.uppercase() } else ""
+                    val d = LocalDate.parse(targetDay, isoFormat)
+                    d.format(shortMonthFormat).replaceFirstChar { it.uppercase() }
                 } catch (_: Exception) { "" }
             } else ""
 
@@ -123,17 +132,12 @@ object DateUtils {
      * Generates all days of a given month for the interactive calendar view.
      */
     fun getDaysInMonth(year: Int, month: Int): List<CalendarDay> {
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month)
-            set(Calendar.DAY_OF_MONTH, 1)
-        }
+        val yearMonth = YearMonth.of(year, month + 1)
+        val maxDays = yearMonth.lengthOfMonth()
+        val firstDay = yearMonth.atDay(1)
+        val firstDayOfWeek = firstDay.dayOfWeek.value // 1=Mon .. 7=Sun
+
         val days = mutableListOf<CalendarDay>()
-        val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-        
-        // 1=Mon .. 7=Sun
-        var firstDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1
-        if (firstDayOfWeek == 0) firstDayOfWeek = 7
 
         // Leading empty days from previous month
         for (i in 1 until firstDayOfWeek) {
@@ -143,8 +147,7 @@ object DateUtils {
         val todayString = getTodayDateString()
 
         for (day in 1..maxDays) {
-            cal.set(Calendar.DAY_OF_MONTH, day)
-            val dateStr = isoFormat.format(cal.time)
+            val dateStr = yearMonth.atDay(day).format(isoFormat)
             days.add(
                 CalendarDay(
                     dayNumber = day,
@@ -159,32 +162,31 @@ object DateUtils {
 
     fun calculateStreak(completedDates: Set<String>): Pair<Int, Int> {
         if (completedDates.isEmpty()) return Pair(0, 0)
-        
+
         val todayStr = getTodayDateString()
         val yesterdayStr = getDaysAgoDateString(1)
-        
+
         var currentStreak = 0
-        var checkCal = Calendar.getInstance()
 
         // If today is completed, start from today. If not, start from yesterday if completed.
-        val startDate = when {
+        val startDateStr = when {
             completedDates.contains(todayStr) -> todayStr
             completedDates.contains(yesterdayStr) -> yesterdayStr
             else -> null
         }
 
-        if (startDate != null) {
-            val startCal = Calendar.getInstance()
-            try {
-                val d = isoFormat.parse(startDate)
-                if (d != null) startCal.time = d
-            } catch (_: Exception) {}
+        if (startDateStr != null) {
+            var currentDate: LocalDate? = try {
+                LocalDate.parse(startDateStr, isoFormat)
+            } catch (_: Exception) {
+                null
+            }
 
-            while (true) {
-                val checkStr = isoFormat.format(startCal.time)
+            while (currentDate != null) {
+                val checkStr = currentDate.format(isoFormat)
                 if (completedDates.contains(checkStr)) {
                     currentStreak++
-                    startCal.add(Calendar.DAY_OF_YEAR, -1)
+                    currentDate = currentDate.minusDays(1)
                 } else {
                     break
                 }
@@ -193,18 +195,18 @@ object DateUtils {
 
         // Calculate best streak across all history
         val sortedDates = completedDates.mapNotNull {
-            try { isoFormat.parse(it) } catch (_: Exception) { null }
+            try { LocalDate.parse(it, isoFormat) } catch (_: Exception) { null }
         }.sorted()
 
         var bestStreak = 0
         var tempStreak = 0
-        var prevDate: Date? = null
+        var prevDate: LocalDate? = null
 
         for (date in sortedDates) {
             if (prevDate == null) {
                 tempStreak = 1
             } else {
-                val diffDays = (date.time - prevDate.time) / (1000 * 60 * 60 * 24)
+                val diffDays = ChronoUnit.DAYS.between(prevDate, date)
                 if (diffDays == 1L) {
                     tempStreak++
                 } else if (diffDays > 1L) {
@@ -226,9 +228,9 @@ object DateUtils {
         val minutes = (safeSeconds % 3600) / 60
         val seconds = safeSeconds % 60
         return if (hours > 0) {
-            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+            String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
         } else {
-            String.format("%02d:%02d", minutes, seconds)
+            String.format(Locale.US, "%02d:%02d", minutes, seconds)
         }
     }
 
@@ -377,12 +379,8 @@ object DateUtils {
         val month = calendar.get(Calendar.MONTH)
         val monthTitle = formatMonthYear(calendar)
 
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month)
-            set(Calendar.DAY_OF_MONTH, 1)
-        }
-        val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val yearMonth = YearMonth.of(year, month + 1)
+        val maxDays = yearMonth.lengthOfMonth()
         val todayStr = getTodayDateString()
 
         val dataPoints = mutableListOf<MonthlyTrendDataPoint>()
@@ -395,8 +393,7 @@ object DateUtils {
         var lowestRate = 100f
 
         for (day in 1..maxDays) {
-            cal.set(Calendar.DAY_OF_MONTH, day)
-            val dateStr = isoFormat.format(cal.time)
+            val dateStr = yearMonth.atDay(day).format(isoFormat)
             val isToday = (dateStr == todayStr)
             val isFuture = dateStr > todayStr
             val dayOfWeekNum = getDayOfWeek(dateStr)
