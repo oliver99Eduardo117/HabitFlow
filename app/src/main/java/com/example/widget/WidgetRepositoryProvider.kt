@@ -93,14 +93,18 @@ object WidgetRepositoryProvider {
      */
     fun observeWidgetState(context: Context): Flow<WidgetStateSnapshot> {
         val repo = getRepository(context)
-        val today = DateUtils.getTodayDateString()
         return combine(
             repo.activeHabits,
             repo.allLogs,
-            repo.userStats,
-            repo.getHabitsWithStats(today)
-        ) { habits, logs, stats, habitsWithStats ->
+            repo.userStats
+        ) { habits, logs, stats ->
+            val today = DateUtils.getTodayDateString()
             val todayLogs = logs.filter { it.date == today }
+            val habitsWithStats = try {
+                repo.getHabitsWithStats(today).first()
+            } catch (_: Exception) {
+                emptyList()
+            }
             WidgetStateSnapshot(
                 activeHabits = habits,
                 totalLogs = logs.size,

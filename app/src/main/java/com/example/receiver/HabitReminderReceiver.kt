@@ -29,11 +29,13 @@ class HabitReminderReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIMEZONE_CHANGED,
-            Intent.ACTION_TIME_CHANGED -> {
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_DATE_CHANGED -> {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         NotificationHelper.rescheduleAllRemindersSync(context)
+                        WidgetUpdater.refreshAll(context)
                     } finally {
                         pendingResult.finish()
                     }
@@ -261,7 +263,7 @@ class HabitReminderReceiver : BroadcastReceiver() {
                     }
 
                     val gainedXp = repository.toggleHabitCompletion(habitId, today)
-                    WidgetUpdater.scheduleRefresh(context)
+                    WidgetUpdater.refreshAll(context)
                     if (gainedXp > 0) {
                         repository.checkStreakMilestone(habitId)
                     }
