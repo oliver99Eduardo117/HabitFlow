@@ -8,6 +8,7 @@ import com.example.database.AppDatabase
 import com.example.model.Habit
 import com.example.model.HabitLog
 import com.example.model.HabitWithStats
+import com.example.model.SubTask
 import com.example.model.UserStats
 import com.example.repository.HabitRepository
 import com.example.util.DateUtils
@@ -25,10 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 data class WidgetStateSnapshot(
     val activeHabits: List<Habit> = emptyList(),
-    val totalLogs: Int = 0,
+    val logs: List<HabitLog> = emptyList(),
     val todayLogs: List<HabitLog> = emptyList(),
     val userStats: UserStats? = null,
-    val habitsWithStats: List<HabitWithStats> = emptyList()
+    val subTasks: List<SubTask> = emptyList()
 )
 
 object WidgetRepositoryProvider {
@@ -96,21 +97,17 @@ object WidgetRepositoryProvider {
         return combine(
             repo.activeHabits,
             repo.allLogs,
-            repo.userStats
-        ) { habits, logs, stats ->
+            repo.userStats,
+            repo.allSubTasks
+        ) { habits, logs, stats, subTasks ->
             val today = DateUtils.getTodayDateString()
             val todayLogs = logs.filter { it.date == today }
-            val habitsWithStats = try {
-                repo.getHabitsWithStats(today).first()
-            } catch (_: Exception) {
-                emptyList()
-            }
             WidgetStateSnapshot(
                 activeHabits = habits,
-                totalLogs = logs.size,
+                logs = logs,
                 todayLogs = todayLogs,
                 userStats = stats,
-                habitsWithStats = habitsWithStats
+                subTasks = subTasks
             )
         }.distinctUntilChanged()
     }

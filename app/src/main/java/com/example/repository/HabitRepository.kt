@@ -29,6 +29,7 @@ class HabitRepository(
     val allCategories: Flow<List<Category>> = categoryDao.getAllCategories()
     val allLogs: Flow<List<HabitLog>> = habitLogDao.getAllLogs()
     val userStats: Flow<UserStats?> = userStatsDao.getUserStatsFlow()
+    val allSubTasks: Flow<List<SubTask>> = subTaskDao.getAllSubTasks()
 
     fun getLogsForDate(date: String): Flow<List<HabitLog>> = habitLogDao.getLogsForDate(date)
 
