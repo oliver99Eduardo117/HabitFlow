@@ -256,11 +256,17 @@ class ToggleHabitAction : ActionCallback {
         val habitId = parameters[habitIdKey] ?: return
         val widgetType = parameters[widgetTypeKey] ?: "today"
 
+        android.util.Log.d("HabitFlowWidget", "onAction INICIO habitId=$habitId tipo=$widgetType")
+
         val t0 = System.currentTimeMillis()
         // 1. Synchronously execute real Room write and await
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
-        repository.toggleHabitCompletion(habitId, today)
+        try {
+            repository.toggleHabitCompletion(habitId, today)
+        } catch (e: Exception) {
+            android.util.Log.e("HabitFlowWidget", "toggleHabitCompletion falló (el log pudo persistirse igual)", e)
+        }
         val tDb = System.currentTimeMillis() - t0
 
         // Invalidate cache immediately after write so the touched instance gets fresh data
@@ -284,8 +290,14 @@ class ToggleHabitAction : ActionCallback {
             "ToggleHabitAction: DB toggle took ${tDb}ms, Touched widget ($widgetType) update took ${tTouched}ms"
         )
 
-        // 3. Phase 2: Schedule the rest without blocking
-        WidgetUpdater.scheduleRefresh(context)
+        // 3. Phase 2: Awaited refresh of all widgets
+        try {
+            WidgetUpdater.refreshAll(context)
+        } catch (e: Exception) {
+            android.util.Log.e("HabitFlowWidget", "refreshAll falló", e)
+        }
+
+        android.util.Log.d("HabitFlowWidget", "onAction FIN — refresco completado")
     }
 
     companion object {
