@@ -164,7 +164,6 @@ class HabitRepository(
         if (isNowCompleted && date == DateUtils.getTodayDateString()) {
             NotificationHelper.dismissActiveReminder(context, habitId)
         }
-        WidgetUpdater.scheduleRefresh(context)
         earnedXp
     }
 
