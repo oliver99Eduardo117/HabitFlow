@@ -307,7 +307,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             val gainedXp = repository.toggleHabitCompletion(habitId, date)
             WidgetUpdater.scheduleRefresh(getApplication())
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
-            val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP 🔥" else "Hábito desmarcado"
+            val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP" else "Hábito desmarcado"
             _uiState.update { it.copy(snackbarMessage = message) }
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
@@ -373,7 +373,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                 timerDurationMinutes = template.timerDurationMinutes
             )
             repository.saveHabit(newHabit, template.subTasks)
-            _uiState.update { it.copy(snackbarMessage = "Plantilla '${template.title}' agregada 🎯") }
+            _uiState.update { it.copy(snackbarMessage = "Plantilla '${template.title}' agregada") }
         }
     }
 
@@ -428,7 +428,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleHardcoreMode(enabled: Boolean) {
         viewModelScope.launch {
             repository.updateHardcoreMode(enabled)
-            val msg = if (enabled) "🔥 Modo Hardcore activado: ¡Cero tolerancia a fallar!" else "Modo estándar restaurado"
+            val msg = if (enabled) "Modo Hardcore activado: ¡Cero tolerancia a fallar!" else "Modo estándar restaurado"
             _uiState.update { it.copy(snackbarMessage = msg) }
         }
     }
@@ -510,12 +510,12 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoading = false) }
             result.onSuccess { summary ->
                 _uiState.update {
-                    it.copy(snackbarMessage = "✅ Base de datos restaurada: ${summary.habitsCount} hábitos y ${summary.logsCount} check-ins cargados con éxito")
+                    it.copy(snackbarMessage = "Base de datos restaurada: ${summary.habitsCount} hábitos y ${summary.logsCount} check-ins cargados con éxito")
                 }
                 triggerHaptic(longArrayOf(0, 40, 60, 40))
             }.onFailure { error ->
                 _uiState.update {
-                    it.copy(snackbarMessage = "❌ Error al restaurar: ${error.localizedMessage ?: "Formato JSON inválido"}")
+                    it.copy(snackbarMessage = "Error al restaurar: ${error.localizedMessage ?: "Formato JSON inválido"}")
                 }
             }
             onComplete(result)
@@ -525,9 +525,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: ThemeMode) {
         themePrefs.setThemeMode(mode)
         val msg = when (mode) {
-            ThemeMode.LIGHT -> "☀️ Modo Claro activado"
-            ThemeMode.DARK -> "🌙 Modo Oscuro activado"
-            ThemeMode.SYSTEM -> "⚙️ Modo Sistema activado"
+            ThemeMode.LIGHT -> "Modo Claro activado"
+            ThemeMode.DARK -> "Modo Oscuro activado"
+            ThemeMode.SYSTEM -> "Modo Sistema activado"
         }
         _uiState.update { it.copy(snackbarMessage = msg) }
         triggerHaptic()
@@ -545,7 +545,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDynamicColor(enabled: Boolean) {
         themePrefs.setDynamicColor(enabled)
-        val msg = if (enabled) "🎨 Colores Dinámicos activados" else "Paleta estándar restaurada"
+        val msg = if (enabled) "Colores Dinámicos activados" else "Paleta estándar restaurada"
         _uiState.update { it.copy(snackbarMessage = msg) }
         triggerHaptic()
     }

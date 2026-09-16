@@ -49,9 +49,16 @@ fun FocusTimerSheet(
     var showHabitMenu by remember { mutableStateOf(false) }
 
     val standardPresets = listOf(5, 25, 45, 60)
-    var selectedPresetMinutes by remember { mutableIntStateOf(25) }
-    var isCustomMode by remember { mutableStateOf(false) }
-    var customMinutesInput by remember { mutableStateOf("25") }
+    // Duración configurada en el TimerManager (null en modo libre, donde totalSeconds es 0)
+    val configuredMinutes = if (timerState.isPomodoro && timerState.totalSeconds > 0) {
+        timerState.totalSeconds / 60
+    } else {
+        null
+    }
+    val initialMinutes = configuredMinutes ?: 25
+    var selectedPresetMinutes by remember { mutableIntStateOf(initialMinutes) }
+    var isCustomMode by remember { mutableStateOf(initialMinutes !in standardPresets) }
+    var customMinutesInput by remember { mutableStateOf(initialMinutes.toString()) }
 
     val parsedCustomMinutes = customMinutesInput.toIntOrNull() ?: 0
     val isCustomInputInvalid = isCustomMode && (parsedCustomMinutes < 1 || parsedCustomMinutes > MAX_MINUTES_24_HOURS)
@@ -60,6 +67,16 @@ fun FocusTimerSheet(
         parsedCustomMinutes.coerceIn(1, MAX_MINUTES_24_HOURS)
     } else {
         selectedPresetMinutes
+    }
+
+    // Si la duración cambia desde fuera de esta pantalla, refleja el nuevo valor en los chips
+    LaunchedEffect(configuredMinutes) {
+        val mins = configuredMinutes ?: return@LaunchedEffect
+        if (mins != effectiveMinutes) {
+            isCustomMode = mins !in standardPresets
+            selectedPresetMinutes = mins
+            customMinutesInput = mins.toString()
+        }
     }
 
     val displaySeconds = if (timerState.isPomodoro) timerState.remainingSeconds else timerState.elapsedSeconds

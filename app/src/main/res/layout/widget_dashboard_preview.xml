@@ -62,15 +62,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <TextView
+            <ImageView
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:background="#10B981"
-                android:gravity="center"
-                android:text="✓"
-                android:textColor="#FFFFFF"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:padding="3dp"
+                android:src="@drawable/ic_widget_check"
+                android:contentDescription="@null" />
 
             <TextView
                 android:layout_width="0dp"

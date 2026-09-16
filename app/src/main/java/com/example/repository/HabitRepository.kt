@@ -14,6 +14,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Elimina emojis y selectores de variación de textos generados por IA. */
+private val EMOJI_REGEX = Regex(
+    "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2B00}-\\x{2BFF}" +
+        "\\x{231A}-\\x{231B}\\x{23E9}-\\x{23FA}\\x{FE0F}\\x{200D}\\x{20E3}]"
+)
+
+private fun String.stripEmojis(): String =
+    replace(EMOJI_REGEX, "").replace(Regex("\\s{2,}"), " ").trim()
+
 class HabitRepository(
     private val database: AppDatabase,
     private val context: Context
@@ -434,7 +443,7 @@ class HabitRepository(
             - Logros desbloqueados: ${stats.unlockedBadgeIds.size} de ${AllBadges.size}
         """.trimIndent()
 
-        val systemPrompt = "Eres un coach experto en creación de hábitos, productividad y psicología del comportamiento. Analiza los datos reales del usuario en HabitFlow y genera exactamente de 3 a 4 insights concisos, accionables y motivadores en español. Cada insight debe comenzar con un emoji descriptivo (📊, 🏆, 💡, 🔥, ⚡, etc.) y tener 1 o 2 oraciones máximo. Sé honesto, empático y directo sin inventar estadísticas o números que no estén en los datos."
+        val systemPrompt = "Eres un coach experto en creación de hábitos, productividad y psicología del comportamiento. Analiza los datos reales del usuario en HabitFlow y genera exactamente de 3 a 4 insights concisos, accionables y motivadores en español. Cada insight debe tener 1 o 2 oraciones máximo, escrito solo con texto: no uses emojis, pictogramas ni símbolos decorativos. Sé honesto, empático y directo sin inventar estadísticas o números que no estén en los datos."
 
         val userPrompt = """
             Aquí están los datos de mis hábitos y progreso actual en HabitFlow:
@@ -459,7 +468,7 @@ class HabitRepository(
         result.fold(
             onSuccess = { aiText ->
                 val lines = aiText.lines()
-                    .map { it.trim() }
+                    .map { it.stripEmojis() }
                     .filter { it.isNotBlank() }
                     .map { line ->
                         line.replace(Regex("^(\\d+\\.|[-*•])\\s*"), "").trim()
@@ -485,33 +494,33 @@ class HabitRepository(
     ): List<String> {
         if (logs.isEmpty() || habits.isEmpty()) {
             return listOf(
-                "💡 Comienza completando tus primeros hábitos diarios para desbloquear el análisis inteligente de correlaciones.",
-                "⚡ Consejo Pro: Agrupa hábitos matutinos como hidratación y estiramientos (técnica Habit Stacking) para duplicar tu consistencia."
+                "Comienza completando tus primeros hábitos diarios para desbloquear el análisis inteligente de correlaciones.",
+                "Consejo Pro: Agrupa hábitos matutinos como hidratación y estiramientos (técnica Habit Stacking) para duplicar tu consistencia."
             )
         }
 
         val insights = mutableListOf<String>()
         val completedLogs = logs.filter { it.value > 0f }
-        insights.add("📊 Has registrado ${completedLogs.size} check-ins reales en total con una tendencia de progreso constante.")
+        insights.add("Has registrado ${completedLogs.size} check-ins reales en total con una tendencia de progreso constante.")
 
         val completionsByHabit = completedLogs.groupBy { it.habitId }
         val topHabitEntry = completionsByHabit.maxByOrNull { it.value.size }
         if (topHabitEntry != null) {
             val topHabit = habits.find { it.id == topHabitEntry.key }
             if (topHabit != null) {
-                insights.add("🏆 Tu hábito ancla es '${topHabit.title}' con ${topHabitEntry.value.size} completados reales. ¡Úsalo como detonante para hábitos más difíciles!")
+                insights.add("Tu hábito ancla es '${topHabit.title}' con ${topHabitEntry.value.size} completados reales. ¡Úsalo como detonante para hábitos más difíciles!")
             }
         }
 
         val topCategory = habits.groupBy { it.category }.maxByOrNull { it.value.size }
         if (topCategory != null && topCategory.value.size > 1) {
-            insights.add("🎯 Tu categoría con mayor enfoque es '${topCategory.key}' con ${topCategory.value.size} hábitos activos configurados.")
+            insights.add("Tu categoría con mayor enfoque es '${topCategory.key}' con ${topCategory.value.size} hábitos activos configurados.")
         }
 
         if (stats.bestStreakAllTime > 0) {
-            insights.add("🔥 Récord de consistencia: Tu mejor racha histórica es de ${stats.bestStreakAllTime} días seguidos. ¡Mantén el ritmo hoy para superarla!")
+            insights.add("Récord de consistencia: Tu mejor racha histórica es de ${stats.bestStreakAllTime} días seguidos. ¡Mantén el ritmo hoy para superarla!")
         } else {
-            insights.add("🧠 Recomendación de Ritmo: Mantén tu racha activa hoy para asegurar la bonificación de XP y no romper tu cadena de progreso.")
+            insights.add("Recomendación de Ritmo: Mantén tu racha activa hoy para asegurar la bonificación de XP y no romper tu cadena de progreso.")
         }
 
         return insights

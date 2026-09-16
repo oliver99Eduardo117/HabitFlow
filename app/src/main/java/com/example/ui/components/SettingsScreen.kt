@@ -92,9 +92,9 @@ fun SettingsScreen(
                         outputStream.flush()
                     }
                     showSuccessToastMsg = "Copia de seguridad guardada con éxito en el archivo seleccionado."
-                    Toast.makeText(context, "✅ Copia de seguridad guardada", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Copia de seguridad guardada", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    Toast.makeText(context, "❌ Error al guardar archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Error al guardar archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 } finally {
                     isExporting = false
                 }
@@ -121,15 +121,15 @@ fun SettingsScreen(
                         }.onFailure { error ->
                             Toast.makeText(
                                 context,
-                                "❌ Archivo no válido: ${error.localizedMessage ?: "Formato JSON incompatible"}",
+                                "Archivo no válido: ${error.localizedMessage ?: "Formato JSON incompatible"}",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
                     } else {
-                        Toast.makeText(context, "❌ El archivo seleccionado está vacío", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "El archivo seleccionado está vacío", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(context, "❌ Error al leer archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Error al leer archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -193,7 +193,7 @@ fun SettingsScreen(
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("HabitFlow Backup", jsonContent)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "📋 JSON copiado al portapapeles", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "JSON copiado al portapapeles", Toast.LENGTH_SHORT).show()
                         } catch (e: Exception) {
                             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
@@ -355,7 +355,7 @@ fun SettingsScreen(
                 }.onFailure { err ->
                     Toast.makeText(
                         context,
-                        "❌ Error de formato JSON: ${err.localizedMessage}",
+                        "Error de formato JSON: ${err.localizedMessage}",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -987,7 +987,7 @@ private fun RestoreConfirmationDialog(
                 }
 
                 Text(
-                    text = "⚠️ ADVERTENCIA: Esta acción reemplazará la base de datos local actual con los datos del respaldo seleccionado.",
+                    text = "ADVERTENCIA: Esta acción reemplazará la base de datos local actual con los datos del respaldo seleccionado.",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
