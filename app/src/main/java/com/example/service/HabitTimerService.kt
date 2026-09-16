@@ -115,15 +115,15 @@ class HabitTimerService : Service() {
         val timeStr = com.example.util.DateUtils.formatTimerDisplay(displaySeconds)
 
         val title = if (state.habitTitle.isNotEmpty()) {
-            if (isPomodoro) "⏳ ${state.habitTitle} (Pomodoro)" else "⏱️ ${state.habitTitle} (Libre)"
+            if (isPomodoro) "${state.habitTitle} (Pomodoro)" else "${state.habitTitle} (Libre)"
         } else {
-            if (isPomodoro) "⏳ Enfoque Pomodoro" else "⏱️ Cronómetro Libre"
+            if (isPomodoro) "Enfoque Pomodoro" else "Cronómetro Libre"
         }
 
         val statusText = if (state.isRunning) {
             if (isPomodoro) "$timeStr restante • En curso" else "$timeStr transcurrido • En curso"
         } else {
-            "⏸️ Pausado ($timeStr)"
+            "Pausado ($timeStr)"
         }
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -187,7 +187,7 @@ class HabitTimerService : Service() {
     }
 
     private fun showCompletionNotification() {
-        val state = TimerManager.timerState.value
+        val state = TimerManager.lastFinishedSession ?: TimerManager.timerState.value
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -199,9 +199,9 @@ class HabitTimerService : Service() {
         )
 
         val title = if (state.habitTitle.isNotEmpty()) {
-            "🎉 ¡Pomodoro completado para ${state.habitTitle}!"
+            "¡Pomodoro completado para ${state.habitTitle}!"
         } else {
-            "🎉 ¡Pomodoro completado!"
+            "¡Pomodoro completado!"
         }
 
         val completedMins = state.totalSeconds / 60

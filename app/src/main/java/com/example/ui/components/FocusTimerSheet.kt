@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Habit
 import com.example.util.DateUtils
+import com.example.util.IconHelper
 import com.example.viewmodel.ActiveTimerState
 
 private const val MAX_MINUTES_24_HOURS = 1440
@@ -38,10 +39,15 @@ fun FocusTimerSheet(
     onTogglePlayPause: () -> Unit,
     onResetTimer: () -> Unit,
     onCompleteEarly: () -> Unit,
-    onSelectHabitForTimer: (Habit, Boolean) -> Unit,
+    onConfigureTimer: (habit: Habit?, isPomodoro: Boolean, durationMinutes: Int) -> Unit,
+    onLinkHabit: (Habit?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isPomodoroMode by remember { mutableStateOf(timerState.isPomodoro) }
+    val isPomodoroMode = timerState.isPomodoro
+    val hasActiveSession = timerState.isRunning || timerState.isPaused
+    val linkedHabit = habits.find { it.id == timerState.habitId }
+    var showHabitMenu by remember { mutableStateOf(false) }
+
     val standardPresets = listOf(5, 25, 45, 60)
     var selectedPresetMinutes by remember { mutableIntStateOf(25) }
     var isCustomMode by remember { mutableStateOf(false) }
@@ -106,10 +112,9 @@ fun FocusTimerSheet(
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = isPomodoroMode,
+                    enabled = !hasActiveSession,
                     onClick = {
-                        isPomodoroMode = true
-                        val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                        if (h != null) onSelectHabitForTimer(h.copy(timerDurationMinutes = effectiveMinutes), true)
+                        if (!isPomodoroMode) onConfigureTimer(linkedHabit, true, effectiveMinutes)
                     },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                 ) {
@@ -117,10 +122,9 @@ fun FocusTimerSheet(
                 }
                 SegmentedButton(
                     selected = !isPomodoroMode,
+                    enabled = !hasActiveSession,
                     onClick = {
-                        isPomodoroMode = false
-                        val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                        if (h != null) onSelectHabitForTimer(h, false)
+                        if (isPomodoroMode) onConfigureTimer(linkedHabit, false, effectiveMinutes)
                     },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                 ) {
@@ -128,7 +132,7 @@ fun FocusTimerSheet(
                 }
             }
 
-            if (isPomodoroMode && !timerState.isRunning) {
+            if (isPomodoroMode && !hasActiveSession) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -142,8 +146,7 @@ fun FocusTimerSheet(
                                 isCustomMode = false
                                 selectedPresetMinutes = mins
                                 customMinutesInput = mins.toString()
-                                val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                                if (h != null) onSelectHabitForTimer(h.copy(timerDurationMinutes = mins), true)
+                                onConfigureTimer(linkedHabit, true, mins)
                             },
                             label = { Text("${mins}m") },
                             modifier = Modifier.weight(1f)
@@ -192,8 +195,7 @@ fun FocusTimerSheet(
                                     val p = digits.toIntOrNull()
                                     if (p != null && p in 1..MAX_MINUTES_24_HOURS) {
                                         selectedPresetMinutes = p
-                                        val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                                        if (h != null) onSelectHabitForTimer(h.copy(timerDurationMinutes = p), true)
+                                        onConfigureTimer(linkedHabit, true, p)
                                     }
                                 }
                             },
@@ -209,8 +211,7 @@ fun FocusTimerSheet(
                                 val next = (parsedCustomMinutes + 15).coerceIn(1, MAX_MINUTES_24_HOURS)
                                 customMinutesInput = next.toString()
                                 selectedPresetMinutes = next
-                                val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                                if (h != null) onSelectHabitForTimer(h.copy(timerDurationMinutes = next), true)
+                                onConfigureTimer(linkedHabit, true, next)
                             },
                             label = { Text("+15m") }
                         )
@@ -220,8 +221,7 @@ fun FocusTimerSheet(
                                 val next = (parsedCustomMinutes + 60).coerceIn(1, MAX_MINUTES_24_HOURS)
                                 customMinutesInput = next.toString()
                                 selectedPresetMinutes = next
-                                val h = habits.find { it.id == timerState.habitId } ?: habits.firstOrNull()
-                                if (h != null) onSelectHabitForTimer(h.copy(timerDurationMinutes = next), true)
+                                onConfigureTimer(linkedHabit, true, next)
                             },
                             label = { Text("+1h") }
                         )
@@ -264,53 +264,113 @@ fun FocusTimerSheet(
             }
         }
 
-        // Habit Linked Dropdown/Chip
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
+        // Habit Linked Selector
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .clickable { showHabitMenu = true }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        if (linkedHabit != null) {
+                            val habitColor = runCatching {
+                                Color(android.graphics.Color.parseColor(linkedHabit.colorHex))
+                            }.getOrDefault(MaterialTheme.colorScheme.primary)
+                            Icon(
+                                imageVector = IconHelper.getIconByName(linkedHabit.iconName),
+                                contentDescription = null,
+                                tint = habitColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.LinkOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (linkedHabit != null) "Vinculado a: ${linkedHabit.title}" else "Sin hábito vinculado",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
                     Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = Color(0xFF6366F1),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (timerState.habitTitle.isNotEmpty()) "Asociado: ${timerState.habitTitle}" else "Sin hábito asignado",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Cambiar hábito vinculado"
                     )
                 }
+            }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LockClock,
-                        contentDescription = null,
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.primary
+            DropdownMenu(
+                expanded = showHabitMenu,
+                onDismissRequest = { showHabitMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Sin hábito (actividad libre)") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.LinkOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = {
+                        onLinkHabit(null)
+                        showHabitMenu = false
+                    }
+                )
+                HorizontalDivider()
+                if (habits.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No tienes hábitos activos") },
+                        onClick = {},
+                        enabled = false
                     )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "Bloqueo OK",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp
-                    )
+                } else {
+                    habits.forEach { habit ->
+                        val itemColor = runCatching {
+                            Color(android.graphics.Color.parseColor(habit.colorHex))
+                        }.getOrDefault(MaterialTheme.colorScheme.primary)
+                        DropdownMenuItem(
+                            text = { Text(habit.title) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = IconHelper.getIconByName(habit.iconName),
+                                    contentDescription = null,
+                                    tint = itemColor
+                                )
+                            },
+                            trailingIcon = if (habit.id == timerState.habitId) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else null,
+                            onClick = {
+                                onLinkHabit(habit)
+                                showHabitMenu = false
+                            }
+                        )
+                    }
                 }
             }
         }

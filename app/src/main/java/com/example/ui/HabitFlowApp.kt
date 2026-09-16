@@ -654,9 +654,10 @@ fun HabitFlowApp(
                         onTogglePlayPause = { viewModel.toggleTimerPlayPause() },
                         onResetTimer = { viewModel.resetTimer() },
                         onCompleteEarly = { viewModel.completeTimerEarly() },
-                        onSelectHabitForTimer = { h, isPomodoro ->
-                            viewModel.startTimerForHabit(h, isPomodoro)
-                        }
+                        onConfigureTimer = { h, isPomodoro, minutes ->
+                            viewModel.configureTimer(h, isPomodoro, minutes)
+                        },
+                        onLinkHabit = { h -> viewModel.linkTimerHabit(h) }
                     )
                 }
 

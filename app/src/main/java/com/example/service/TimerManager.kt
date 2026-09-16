@@ -31,6 +31,33 @@ object TimerManager {
     private var startTimeRealtime: Long = 0L
     private var accumulatedElapsedSeconds: Int = 0
 
+    /** Snapshot de la última sesión Pomodoro terminada, para la notificación final. */
+    @Volatile
+    var lastFinishedSession: ActiveTimerState? = null
+        private set
+
+    /** Deja el cronómetro libre: sin hábito vinculado, sin progreso, conservando modo y duración. */
+    private fun resetToIdle(from: ActiveTimerState) {
+        accumulatedElapsedSeconds = 0
+        startTimeRealtime = 0L
+        _timerState.value = ActiveTimerState(
+            isRunning = false,
+            isPaused = false,
+            isPomodoro = from.isPomodoro,
+            habitId = null,
+            habitTitle = "",
+            totalSeconds = from.totalSeconds,
+            remainingSeconds = if (from.isPomodoro) from.totalSeconds else 0,
+            elapsedSeconds = 0
+        )
+    }
+
+    fun linkHabit(habit: Habit?) {
+        _timerState.update {
+            it.copy(habitId = habit?.id, habitTitle = habit?.title ?: "")
+        }
+    }
+
     val currentSessionElapsed: Int
         get() {
             val state = _timerState.value
@@ -77,10 +104,12 @@ object TimerManager {
     }
 
     fun configureTimer(habit: Habit?, isPomodoro: Boolean, durationMinutes: Int) {
-        val totalSecs = if (isPomodoro) durationMinutes * 60 else 0
+        val current = _timerState.value
+        if (current.isRunning || current.isPaused) return
+        val effectiveMinutes = if (durationMinutes > 0) durationMinutes else 25
+        val totalSecs = if (isPomodoro) effectiveMinutes * 60 else 0
         accumulatedElapsedSeconds = 0
         startTimeRealtime = 0L
-
         _timerState.value = ActiveTimerState(
             isRunning = false,
             isPaused = false,
@@ -175,17 +204,7 @@ object TimerManager {
         val actualElapsed = currentSessionElapsed
         val loggedMinutes = customMinutes ?: maxOf(1, (if (current.isPomodoro) (current.totalSeconds - current.remainingSeconds) else actualElapsed) / 60)
 
-        accumulatedElapsedSeconds = 0
-        startTimeRealtime = 0L
-
-        _timerState.update {
-            it.copy(
-                isRunning = false,
-                isPaused = false,
-                remainingSeconds = if (it.isPomodoro) it.totalSeconds else 0,
-                elapsedSeconds = 0
-            )
-        }
+        resetToIdle(current)
 
         // Save progress to database
         CoroutineScope(Dispatchers.IO).launch {
@@ -225,17 +244,8 @@ object TimerManager {
             val remaining = maxOf(0, current.totalSeconds - elapsed)
             if (remaining <= 0) {
                 // Timer finished!
-                accumulatedElapsedSeconds = current.totalSeconds
-                startTimeRealtime = 0L
-
-                _timerState.update {
-                    it.copy(
-                        isRunning = false,
-                        isPaused = false,
-                        remainingSeconds = 0,
-                        elapsedSeconds = current.totalSeconds
-                    )
-                }
+                lastFinishedSession = current
+                resetToIdle(current)
 
                 val minutes = current.totalSeconds / 60
                 CoroutineScope(Dispatchers.IO).launch {
@@ -256,9 +266,9 @@ object TimerManager {
                 }
 
                 val msg = if (current.habitTitle.isNotEmpty()) {
-                    "🏆 ¡Pomodoro completado para ${current.habitTitle}! Has ganado +${minutes * 3} XP"
+                    "¡Pomodoro completado para ${current.habitTitle}! Has ganado +${minutes * 3} XP"
                 } else {
-                    "🏆 ¡Pomodoro completado! Has ganado +${minutes * 3} XP"
+                    "¡Pomodoro completado! Has ganado +${minutes * 3} XP"
                 }
                 _timerFinishedEvent.tryEmit(msg)
                 return true

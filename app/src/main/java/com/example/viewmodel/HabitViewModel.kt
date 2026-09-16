@@ -457,6 +457,10 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         TimerManager.configureTimer(habit, isPomodoro, durationMinutes)
     }
 
+    fun linkTimerHabit(habit: Habit?) {
+        TimerManager.linkHabit(habit)
+    }
+
     fun toggleTimerPlayPause() {
         TimerManager.togglePlayPause(getApplication())
     }
@@ -470,7 +474,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         val loggedMinutes = maxOf(1, (if (current.isPomodoro) (current.totalSeconds - current.remainingSeconds) else current.elapsedSeconds) / 60)
         TimerManager.stopAndSave(getApplication(), loggedMinutes)
         _uiState.update {
-            it.copy(snackbarMessage = "🎉 ¡Sesión de $loggedMinutes min guardada! +${loggedMinutes * 2} XP")
+            it.copy(snackbarMessage = "¡Sesión de $loggedMinutes min guardada! +${loggedMinutes * 2} XP")
         }
         triggerHaptic()
     }
