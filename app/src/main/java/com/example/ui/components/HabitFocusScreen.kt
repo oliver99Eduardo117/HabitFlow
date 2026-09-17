@@ -2,7 +2,9 @@ package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -34,6 +36,7 @@ fun HabitFocusScreen(
     habit: Habit,
     timerState: ActiveTimerState,
     initialMinutes: Int,
+    todayValue: Float,
     onClose: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onResetTimer: () -> Unit,
@@ -96,17 +99,23 @@ fun HabitFocusScreen(
         habit.unit.trim().lowercase() in setOf("min", "mins", "minuto", "minutos")
     }
 
-    val targetText = remember(habit, initialMinutes, isMinuteUnit) {
-        if (isMinuteUnit) {
-            val target = habit.targetValue.toInt()
-            if (initialMinutes > 0) {
-                "Meta de hoy: $target min (faltan $initialMinutes min)"
-            } else {
-                "Meta de hoy: $target min (completada)"
+    val targetText = run {
+        val target = habit.targetValue
+        val fmt: (Float) -> String = { v ->
+            if (v % 1f == 0f) v.toInt().toString() else String.format("%.1f", v)
+        }
+        when {
+            isMinuteUnit -> {
+                val remaining = kotlin.math.ceil(target - todayValue).toInt()
+                if (remaining >= 1) {
+                    "Hoy: ${fmt(todayValue)} / ${fmt(target)} min (faltan $remaining min)"
+                } else {
+                    "Meta de hoy cumplida: ${fmt(todayValue)} / ${fmt(target)} min"
+                }
             }
-        } else {
-            val formattedTarget = if (habit.targetValue % 1f == 0f) habit.targetValue.toInt().toString() else habit.targetValue.toString()
-            "Meta: $formattedTarget ${habit.unit}"
+            habit.unit.isNotEmpty() -> "Hoy: ${fmt(todayValue)} / ${fmt(target)} ${habit.unit}"
+            todayValue >= target -> "Completado hoy"
+            else -> "Pendiente hoy"
         }
     }
 
@@ -140,14 +149,6 @@ fun HabitFocusScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onClose) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Cerrar"
                         )
                     }
                 }
@@ -200,7 +201,9 @@ fun HabitFocusScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                     ) {
                         standardPresets.forEach { mins ->
                             val isSelected = !isCustomMode && selectedPresetMinutes == mins
@@ -212,8 +215,7 @@ fun HabitFocusScreen(
                                     customMinutesInput = mins.toString()
                                     onConfigureMinutes(mins)
                                 },
-                                label = { Text("${mins}m") },
-                                modifier = Modifier.weight(1f)
+                                label = { Text("${mins}m", maxLines = 1, softWrap = false) }
                             )
                         }
 
@@ -235,11 +237,12 @@ fun HabitFocusScreen(
                                             "${parsedCustomMinutes}m"
                                         } else {
                                             "X min"
-                                        }
+                                        },
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
-                            },
-                            modifier = Modifier.weight(1.3f)
+                            }
                         )
                     }
 

@@ -59,6 +59,7 @@ fun HabitFlowApp(
     var quantitativeHabitTarget by remember { mutableStateOf<HabitWithStats?>(null) }
     var heatmapHabitTarget by remember { mutableStateOf<HabitWithStats?>(null) }
     var pomodoroHabitTarget by remember { mutableStateOf<HabitWithStats?>(null) }
+    var pendingHabitFocus by remember { mutableStateOf<Triple<Habit, Int, Boolean>?>(null) }
     var showTemplatePicker by remember { mutableStateOf(false) }
     var showSearchField by remember { mutableStateOf(false) }
     var showCreateCategoryDialogMain by remember { mutableStateOf(false) }
@@ -123,6 +124,7 @@ fun HabitFlowApp(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface)
+                    .statusBarsPadding()
             ) {
                 // Top Header Row
                 Row(
@@ -803,6 +805,9 @@ fun HabitFlowApp(
                     habit = focusHabit,
                     timerState = uiState.activeTimer,
                     initialMinutes = initMinutes,
+                    todayValue = uiState.allLogs
+                        .firstOrNull { it.habitId == focusHabit.id && it.date == DateUtils.getTodayDateString() }
+                        ?.value ?: 0f,
                     onClose = { viewModel.closeHabitFocus() },
                     onTogglePlayPause = { viewModel.toggleTimerPlayPause() },
                     onResetTimer = { viewModel.resetTimer() },
@@ -833,7 +838,30 @@ fun HabitFlowApp(
             onResetTimer = { viewModel.resetTimer() },
             onCompleteAndSave = { viewModel.completeTimerEarly() },
             onOpenFullScreen = { minutes, isPomodoro ->
-                viewModel.openHabitFocus(habitStat.habit, minutes, isPomodoro)
+                if (viewModel.hasOtherActiveSession(habitStat.habit.id)) {
+                    pendingHabitFocus = Triple(habitStat.habit, minutes, isPomodoro)
+                } else {
+                    viewModel.openHabitFocus(habitStat.habit, minutes, isPomodoro)
+                }
+            }
+        )
+    }
+
+    pendingHabitFocus?.let { (habit, mins, pomo) ->
+        AlertDialog(
+            onDismissRequest = { pendingHabitFocus = null },
+            title = { Text("Hay otra sesión en curso") },
+            text = { Text("Si abres este hábito, la sesión actual se descartará sin guardar su tiempo.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingHabitFocus = null
+                    viewModel.openHabitFocus(habit, mins, pomo)
+                }) {
+                    Text("Descartar y abrir", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingHabitFocus = null }) { Text("Cancelar") }
             }
         )
     }
