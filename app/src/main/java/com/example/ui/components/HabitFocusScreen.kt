@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -322,28 +323,33 @@ fun HabitFocusScreen(
                 )
 
                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
                         text = formattedTime,
-                        fontSize = if (displaySeconds >= 3600) 36.sp else 46.sp,
+                        fontSize = if (displaySeconds >= 3600) 34.sp else 46.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // Etiqueta corta de una línea: el anillo mide ~187dp de ancho a esta altura
                     val statusText = when {
-                        timerState.isRunning -> "En sesión • sumando al hábito"
-                        timerState.isPaused -> "En pausa • toca reproducir para continuar"
-                        else -> "Listo para iniciar • no arrancará hasta que toques reproducir"
+                        timerState.isRunning -> "En curso"
+                        timerState.isPaused -> "En pausa"
+                        timerState.isPomodoro -> "Tiempo restante"
+                        else -> "Tiempo transcurrido"
                     }
                     Text(
                         text = statusText,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        lineHeight = 14.sp
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 170.dp)
                     )
                 }
             }
