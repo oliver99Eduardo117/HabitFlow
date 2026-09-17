@@ -41,7 +41,8 @@ fun HabitPomodoroDialog(
     onTogglePlayPause: () -> Unit,
     onResetTimer: () -> Unit,
     onCompleteAndSave: () -> Unit,
-    onOpenFullScreen: () -> Unit
+    onOpenFullScreen: (minutes: Int, isPomodoro: Boolean) -> Unit,
+    suggestedMinutes: Int = habitWithStats.habit.timerDurationMinutes
 ) {
     val habit = habitWithStats.habit
     val habitColor = try {
@@ -59,6 +60,8 @@ fun HabitPomodoroDialog(
     val standardPresets = listOf(5, 25, 45, 60)
     val initialMinutes = if (isCurrentHabitActive && timerState.isPomodoro && timerState.totalSeconds > 0) {
         timerState.totalSeconds / 60
+    } else if (suggestedMinutes in 1..MAX_MINUTES_24_HOURS) {
+        suggestedMinutes
     } else if (habit.timerDurationMinutes in standardPresets) {
         habit.timerDurationMinutes
     } else if (habit.timerDurationMinutes in 1..MAX_MINUTES_24_HOURS) {
@@ -588,10 +591,7 @@ fun HabitPomodoroDialog(
                 // Option to expand full screen
                 TextButton(
                     onClick = {
-                        if (!isCurrentHabitActive && canStart) {
-                            onStartTimer(effectiveMinutes, isPomodoroMode)
-                        }
-                        onOpenFullScreen()
+                        onOpenFullScreen(effectiveMinutes, isPomodoroMode)
                         onDismiss()
                     },
                     enabled = isCurrentHabitActive || canStart,

@@ -1,10 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,18 +13,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.model.Habit
 import com.example.util.DateUtils
-import com.example.util.IconHelper
 import com.example.viewmodel.ActiveTimerState
 
 private const val MAX_MINUTES_24_HOURS = 1440
@@ -35,22 +28,22 @@ private const val MAX_MINUTES_24_HOURS = 1440
 @Composable
 fun FocusTimerSheet(
     timerState: ActiveTimerState,
-    habits: List<Habit>,
     onTogglePlayPause: () -> Unit,
     onResetTimer: () -> Unit,
     onCompleteEarly: () -> Unit,
-    onConfigureTimer: (habit: Habit?, isPomodoro: Boolean, durationMinutes: Int) -> Unit,
-    onLinkHabit: (Habit?) -> Unit,
+    onConfigure: (isPomodoro: Boolean, durationMinutes: Int) -> Unit,
+    onStartDiscardingForeign: (isPomodoro: Boolean, durationMinutes: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isPomodoroMode = timerState.isPomodoro
-    val hasActiveSession = timerState.isRunning || timerState.isPaused
-    val linkedHabit = habits.find { it.id == timerState.habitId }
-    var showHabitMenu by remember { mutableStateOf(false) }
+    // Sesión de un hábito corriendo o en pausa: Enfoque no la muestra, la trata como ajena
+    val isForeignSession = timerState.habitId != null && (timerState.isRunning || timerState.isPaused)
+    var foreignPomodoro by remember { mutableStateOf(true) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val isPomodoroMode = if (isForeignSession) foreignPomodoro else timerState.isPomodoro
 
     val standardPresets = listOf(5, 25, 45, 60)
     // Duración configurada en el TimerManager (null en modo libre, donde totalSeconds es 0)
-    val configuredMinutes = if (timerState.isPomodoro && timerState.totalSeconds > 0) {
+    val configuredMinutes = if (!isForeignSession && timerState.isPomodoro && timerState.totalSeconds > 0) {
         timerState.totalSeconds / 60
     } else {
         null
@@ -79,11 +72,23 @@ fun FocusTimerSheet(
         }
     }
 
-    val displaySeconds = if (timerState.isPomodoro) timerState.remainingSeconds else timerState.elapsedSeconds
+    // Estado que se dibuja: con sesión ajena, una vista en reposo con la configuración local
+    val view = if (isForeignSession) {
+        val secs = if (foreignPomodoro) effectiveMinutes * 60 else 0
+        ActiveTimerState(isPomodoro = foreignPomodoro, totalSeconds = secs, remainingSeconds = secs)
+    } else {
+        timerState
+    }
+    val hasActiveSession = view.isRunning || view.isPaused
+    val applyConfig: (Boolean, Int) -> Unit = { pomo, mins ->
+        if (isForeignSession) foreignPomodoro = pomo else onConfigure(pomo, mins)
+    }
+
+    val displaySeconds = if (view.isPomodoro) view.remainingSeconds else view.elapsedSeconds
     val formattedTime = DateUtils.formatTimerDisplay(displaySeconds)
 
-    val progress = if (timerState.isPomodoro && timerState.totalSeconds > 0) {
-        (timerState.totalSeconds - timerState.remainingSeconds).toFloat() / timerState.totalSeconds
+    val progress = if (view.isPomodoro && view.totalSeconds > 0) {
+        (view.totalSeconds - view.remainingSeconds).toFloat() / view.totalSeconds
     } else {
         1f
     }
@@ -98,7 +103,7 @@ fun FocusTimerSheet(
         // Top Header
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = if (timerState.habitTitle.isNotEmpty()) timerState.habitTitle else "Modo Enfoque Profundo",
+                text = "Modo Enfoque Profundo",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -107,7 +112,7 @@ fun FocusTimerSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                if (timerState.isRunning) {
+                if (view.isRunning) {
                     Icon(
                         imageVector = Icons.Default.LocalFireDepartment,
                         contentDescription = null,
@@ -117,10 +122,35 @@ fun FocusTimerSheet(
                     Spacer(modifier = Modifier.width(4.dp))
                 }
                 Text(
-                    text = if (timerState.isRunning) "Sesión en curso • Gana +2 XP/min" else "Selecciona tu modo y prepárate",
+                    text = if (view.isRunning) "Sesión en curso • Gana +2 XP/min" else "Selecciona tu modo y prepárate",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            if (isForeignSession) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.HourglassTop,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Hay una sesión de hábito en segundo plano",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -131,7 +161,7 @@ fun FocusTimerSheet(
                     selected = isPomodoroMode,
                     enabled = !hasActiveSession,
                     onClick = {
-                        if (!isPomodoroMode) onConfigureTimer(linkedHabit, true, effectiveMinutes)
+                        if (!isPomodoroMode) applyConfig(true, effectiveMinutes)
                     },
                     shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                 ) {
@@ -141,7 +171,7 @@ fun FocusTimerSheet(
                     selected = !isPomodoroMode,
                     enabled = !hasActiveSession,
                     onClick = {
-                        if (isPomodoroMode) onConfigureTimer(linkedHabit, false, effectiveMinutes)
+                        if (isPomodoroMode) applyConfig(false, effectiveMinutes)
                     },
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                 ) {
@@ -163,7 +193,7 @@ fun FocusTimerSheet(
                                 isCustomMode = false
                                 selectedPresetMinutes = mins
                                 customMinutesInput = mins.toString()
-                                onConfigureTimer(linkedHabit, true, mins)
+                                applyConfig(true, mins)
                             },
                             label = { Text("${mins}m") },
                             modifier = Modifier.weight(1f)
@@ -212,7 +242,7 @@ fun FocusTimerSheet(
                                     val p = digits.toIntOrNull()
                                     if (p != null && p in 1..MAX_MINUTES_24_HOURS) {
                                         selectedPresetMinutes = p
-                                        onConfigureTimer(linkedHabit, true, p)
+                                        applyConfig(true, p)
                                     }
                                 }
                             },
@@ -228,7 +258,7 @@ fun FocusTimerSheet(
                                 val next = (parsedCustomMinutes + 15).coerceIn(1, MAX_MINUTES_24_HOURS)
                                 customMinutesInput = next.toString()
                                 selectedPresetMinutes = next
-                                onConfigureTimer(linkedHabit, true, next)
+                                applyConfig(true, next)
                             },
                             label = { Text("+15m") }
                         )
@@ -238,7 +268,7 @@ fun FocusTimerSheet(
                                 val next = (parsedCustomMinutes + 60).coerceIn(1, MAX_MINUTES_24_HOURS)
                                 customMinutesInput = next.toString()
                                 selectedPresetMinutes = next
-                                onConfigureTimer(linkedHabit, true, next)
+                                applyConfig(true, next)
                             },
                             label = { Text("+1h") }
                         )
@@ -258,7 +288,7 @@ fun FocusTimerSheet(
             CircularProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.fillMaxSize(),
-                color = if (timerState.isRunning) Color(0xFF6366F1) else MaterialTheme.colorScheme.primary,
+                color = if (view.isRunning) Color(0xFF6366F1) else MaterialTheme.colorScheme.primary,
                 strokeWidth = 11.dp,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 strokeCap = StrokeCap.Round
@@ -281,117 +311,6 @@ fun FocusTimerSheet(
             }
         }
 
-        // Habit Linked Selector
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showHabitMenu = true }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        if (linkedHabit != null) {
-                            val habitColor = runCatching {
-                                Color(android.graphics.Color.parseColor(linkedHabit.colorHex))
-                            }.getOrDefault(MaterialTheme.colorScheme.primary)
-                            Icon(
-                                imageVector = IconHelper.getIconByName(linkedHabit.iconName),
-                                contentDescription = null,
-                                tint = habitColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.LinkOff,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (linkedHabit != null) "Vinculado a: ${linkedHabit.title}" else "Sin hábito vinculado",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Cambiar hábito vinculado"
-                    )
-                }
-            }
-
-            DropdownMenu(
-                expanded = showHabitMenu,
-                onDismissRequest = { showHabitMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Sin hábito (actividad libre)") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.LinkOff,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    onClick = {
-                        onLinkHabit(null)
-                        showHabitMenu = false
-                    }
-                )
-                HorizontalDivider()
-                if (habits.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("No tienes hábitos activos") },
-                        onClick = {},
-                        enabled = false
-                    )
-                } else {
-                    habits.forEach { habit ->
-                        val itemColor = runCatching {
-                            Color(android.graphics.Color.parseColor(habit.colorHex))
-                        }.getOrDefault(MaterialTheme.colorScheme.primary)
-                        DropdownMenuItem(
-                            text = { Text(habit.title) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = IconHelper.getIconByName(habit.iconName),
-                                    contentDescription = null,
-                                    tint = itemColor
-                                )
-                            },
-                            trailingIcon = if (habit.id == timerState.habitId) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            } else null,
-                            onClick = {
-                                onLinkHabit(habit)
-                                showHabitMenu = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
         // Control Buttons: Reset, Play/Pause, Finish & Save
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -401,6 +320,7 @@ fun FocusTimerSheet(
             // Reset Button
             IconButton(
                 onClick = onResetTimer,
+                enabled = !isForeignSession,
                 modifier = Modifier
                     .size(52.dp)
                     .clip(CircleShape)
@@ -417,18 +337,20 @@ fun FocusTimerSheet(
 
             // Play / Pause Main Button
             Button(
-                onClick = onTogglePlayPause,
+                onClick = {
+                    if (isForeignSession) showDiscardDialog = true else onTogglePlayPause()
+                },
                 modifier = Modifier
                     .size(72.dp)
                     .clip(CircleShape),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (timerState.isRunning) Color(0xFFF43F5E) else Color(0xFF6366F1)
+                    containerColor = if (view.isRunning) Color(0xFFF43F5E) else Color(0xFF6366F1)
                 ),
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Icon(
-                    imageVector = if (timerState.isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (timerState.isRunning) "Pausar" else "Iniciar",
+                    imageVector = if (view.isRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (view.isRunning) "Pausar" else "Iniciar",
                     modifier = Modifier.size(36.dp),
                     tint = Color.White
                 )
@@ -439,7 +361,7 @@ fun FocusTimerSheet(
             // Save Progress / Finish Early
             IconButton(
                 onClick = onCompleteEarly,
-                enabled = timerState.elapsedSeconds > 0 || (timerState.isPomodoro && timerState.remainingSeconds < timerState.totalSeconds),
+                enabled = view.elapsedSeconds > 0 || (view.isPomodoro && view.remainingSeconds < view.totalSeconds),
                 modifier = Modifier
                     .size(52.dp)
                     .clip(CircleShape)
@@ -451,6 +373,25 @@ fun FocusTimerSheet(
                     tint = Color(0xFF10B981)
                 )
             }
+        }
+
+        if (showDiscardDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardDialog = false },
+                title = { Text("¿Iniciar sesión libre?") },
+                text = { Text("La sesión de hábito en curso se descartará sin guardar su tiempo.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDiscardDialog = false
+                        onStartDiscardingForeign(isPomodoroMode, effectiveMinutes)
+                    }) {
+                        Text("Descartar e iniciar", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiscardDialog = false }) { Text("Cancelar") }
+                }
+            )
         }
     }
 }

@@ -176,6 +176,20 @@ class HabitRepository(
         earnedXp
     }
 
+    /**
+     * Suma minutos de una sesión de temporizador al progreso del día.
+     * recordHabitProgress reemplaza el valor; esta función acumula.
+     */
+    suspend fun addTimerProgress(
+        habitId: Long,
+        date: String,
+        minutes: Float,
+        notes: String = ""
+    ): Int = withContext(Dispatchers.IO) {
+        val existing = habitLogDao.getLogForHabitAndDate(habitId, date)?.value ?: 0f
+        recordHabitProgress(habitId, date, existing + minutes, notes)
+    }
+
     suspend fun toggleHabitCompletion(habitId: Long, date: String): Int = withContext(Dispatchers.IO) {
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val habit = habitDao.getHabitById(habitId) ?: return@withContext 0

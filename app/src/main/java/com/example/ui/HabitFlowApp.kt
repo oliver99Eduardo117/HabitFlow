@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -650,14 +651,15 @@ fun HabitFlowApp(
                 NavigationTab.TIMER -> {
                     FocusTimerSheet(
                         timerState = uiState.activeTimer,
-                        habits = uiState.habits.map { it.habit },
                         onTogglePlayPause = { viewModel.toggleTimerPlayPause() },
                         onResetTimer = { viewModel.resetTimer() },
                         onCompleteEarly = { viewModel.completeTimerEarly() },
-                        onConfigureTimer = { h, isPomodoro, minutes ->
-                            viewModel.configureTimer(h, isPomodoro, minutes)
+                        onConfigure = { isPomo, mins ->
+                            viewModel.configureStandaloneTimer(isPomo, mins)
                         },
-                        onLinkHabit = { h -> viewModel.linkTimerHabit(h) }
+                        onStartDiscardingForeign = { isPomo, mins ->
+                            viewModel.startStandaloneDiscardingForeign(isPomo, mins)
+                        }
                     )
                 }
 
@@ -787,11 +789,37 @@ fun HabitFlowApp(
         )
     }
 
+    // Full Screen Focus Mode for Habit
+    BackHandler(enabled = uiState.habitFocusId != null) {
+        viewModel.closeHabitFocus()
+    }
+
+    if (uiState.habitFocusId != null) {
+        val focusHabit = uiState.habits.find { it.habit.id == uiState.habitFocusId }?.habit
+        if (focusHabit != null) {
+            val initMinutes = remember(focusHabit.id) { viewModel.suggestedFocusMinutes(focusHabit) }
+            Surface(modifier = Modifier.fillMaxSize()) {
+                HabitFocusScreen(
+                    habit = focusHabit,
+                    timerState = uiState.activeTimer,
+                    initialMinutes = initMinutes,
+                    onClose = { viewModel.closeHabitFocus() },
+                    onTogglePlayPause = { viewModel.toggleTimerPlayPause() },
+                    onResetTimer = { viewModel.resetTimer() },
+                    onCompleteEarly = { viewModel.completeTimerEarly() },
+                    onChangeMode = { isPomo -> viewModel.changeHabitFocusMode(focusHabit, isPomo) },
+                    onConfigureMinutes = { mins -> viewModel.configureTimer(focusHabit, true, mins) }
+                )
+            }
+        }
+    }
+
     // Individual Habit Pomodoro & Stopwatch Dialog
     pomodoroHabitTarget?.let { habitStat ->
         HabitPomodoroDialog(
             habitWithStats = habitStat,
             timerState = uiState.activeTimer,
+            suggestedMinutes = viewModel.suggestedFocusMinutes(habitStat.habit),
             onDismiss = { pomodoroHabitTarget = null },
             onStartTimer = { durationMins, isPomodoro ->
                 viewModel.startTimerForHabit(
@@ -804,8 +832,8 @@ fun HabitFlowApp(
             onTogglePlayPause = { viewModel.toggleTimerPlayPause() },
             onResetTimer = { viewModel.resetTimer() },
             onCompleteAndSave = { viewModel.completeTimerEarly() },
-            onOpenFullScreen = {
-                viewModel.setNavigationTab(NavigationTab.TIMER)
+            onOpenFullScreen = { minutes, isPomodoro ->
+                viewModel.openHabitFocus(habitStat.habit, minutes, isPomodoro)
             }
         )
     }

@@ -28,6 +28,10 @@ object TimerManager {
     private val _timerFinishedEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val timerFinishedEvent: SharedFlow<String> = _timerFinishedEvent.asSharedFlow()
 
+    /** Emite el habitId cuando una sesión vinculada a un hábito se guarda o termina. */
+    private val _sessionEnded = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val sessionEnded: SharedFlow<Long> = _sessionEnded.asSharedFlow()
+
     private var startTimeRealtime: Long = 0L
     private var accumulatedElapsedSeconds: Int = 0
 
@@ -50,12 +54,6 @@ object TimerManager {
             remainingSeconds = if (from.isPomodoro) from.totalSeconds else 0,
             elapsedSeconds = 0
         )
-    }
-
-    fun linkHabit(habit: Habit?) {
-        _timerState.update {
-            it.copy(habitId = habit?.id, habitTitle = habit?.title ?: "")
-        }
     }
 
     val currentSessionElapsed: Int
@@ -120,6 +118,15 @@ object TimerManager {
             remainingSeconds = totalSecs,
             elapsedSeconds = 0
         )
+    }
+
+    /** Detiene la sesión actual SIN guardar y deja el cronómetro libre. */
+    fun discardSession(context: Context) {
+        resetToIdle(_timerState.value)
+        val intent = Intent(context, HabitTimerService::class.java).apply {
+            action = HabitTimerService.ACTION_STOP
+        }
+        context.startService(intent)
     }
 
     fun togglePlayPause(context: Context) {
@@ -205,6 +212,7 @@ object TimerManager {
         val loggedMinutes = customMinutes ?: maxOf(1, (if (current.isPomodoro) (current.totalSeconds - current.remainingSeconds) else actualElapsed) / 60)
 
         resetToIdle(current)
+        current.habitId?.takeIf { it > 0 }?.let { _sessionEnded.tryEmit(it) }
 
         // Save progress to database
         CoroutineScope(Dispatchers.IO).launch {
@@ -213,7 +221,7 @@ object TimerManager {
                 val repo = HabitRepository(db, context)
                 repo.addFocusSession(loggedMinutes)
                 if (current.habitId != null && current.habitId > 0) {
-                    repo.recordHabitProgress(
+                    repo.addTimerProgress(
                         current.habitId,
                         DateUtils.getTodayDateString(),
                         loggedMinutes.toFloat(),
@@ -246,6 +254,7 @@ object TimerManager {
                 // Timer finished!
                 lastFinishedSession = current
                 resetToIdle(current)
+                current.habitId?.takeIf { it > 0 }?.let { _sessionEnded.tryEmit(it) }
 
                 val minutes = current.totalSeconds / 60
                 CoroutineScope(Dispatchers.IO).launch {
@@ -254,7 +263,7 @@ object TimerManager {
                         val repo = HabitRepository(db, context)
                         repo.addFocusSession(minutes)
                         if (current.habitId != null && current.habitId > 0) {
-                            repo.recordHabitProgress(
+                            repo.addTimerProgress(
                                 current.habitId,
                                 DateUtils.getTodayDateString(),
                                 minutes.toFloat(),

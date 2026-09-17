@@ -56,6 +56,7 @@ data class HabitUiState(
     val userStats: UserStats = UserStats(),
     val allLogs: List<HabitLog> = emptyList(),
     val activeTimer: ActiveTimerState = ActiveTimerState(),
+    val habitFocusId: Long? = null,
     val insights: List<String> = emptyList(),
     val isLoadingInsights: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -67,6 +68,9 @@ data class HabitUiState(
 class HabitViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: HabitRepository
     private val themePrefs = ThemePreferences.getInstance(application)
+
+    private var lastStandaloneIsPomodoro = true
+    private var lastStandaloneMinutes = 25
 
     private val _uiState = MutableStateFlow(
         HabitUiState(
@@ -174,6 +178,16 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Al guardar o terminar una sesión de hábito abierta en pantalla completa, volver a Hoy
+        viewModelScope.launch {
+            TimerManager.sessionEnded.collect { endedHabitId ->
+                if (endedHabitId == _uiState.value.habitFocusId) {
+                    _uiState.update { it.copy(habitFocusId = null, activeTab = NavigationTab.TODAY) }
+                    restoreStandaloneIfIdle()
+                }
+            }
+        }
+
         // Load AI Insights
         refreshInsights()
     }
@@ -254,6 +268,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setNavigationTab(tab: NavigationTab) {
+        if (tab == NavigationTab.TIMER) restoreStandaloneIfIdle()
         _uiState.update { it.copy(activeTab = tab) }
         if (tab == NavigationTab.PROGRESS && _uiState.value.activeProgressTab == ProgressTab.ANALYTICS) {
             refreshInsights()
@@ -457,8 +472,70 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         TimerManager.configureTimer(habit, isPomodoro, durationMinutes)
     }
 
-    fun linkTimerHabit(habit: Habit?) {
-        TimerManager.linkHabit(habit)
+    /**
+     * Minutos con los que abre la pantalla de un hábito.
+     * Unidad en minutos: lo que falta de la meta de HOY (no de la fecha seleccionada).
+     * Otra unidad, o meta ya cumplida: la duración del bloque del hábito.
+     */
+    fun suggestedFocusMinutes(habit: Habit): Int {
+        val block = habit.timerDurationMinutes.takeIf { it in 1..1440 } ?: 25
+        val isMinuteUnit = habit.unit.trim().lowercase() in setOf("min", "mins", "minuto", "minutos")
+        if (!isMinuteUnit) return block
+        val today = DateUtils.getTodayDateString()
+        val done = _uiState.value.allLogs
+            .firstOrNull { it.habitId == habit.id && it.date == today }?.value ?: 0f
+        val remaining = kotlin.math.ceil(habit.targetValue - done).toInt()
+        return if (remaining >= 1) remaining.coerceAtMost(1440) else block
+    }
+
+    /** true si hay una sesión corriendo o en pausa que NO pertenece a este hábito. */
+    fun hasOtherActiveSession(habitId: Long): Boolean {
+        val t = TimerManager.timerState.value
+        return (t.isRunning || t.isPaused) && t.habitId != habitId
+    }
+
+    /** Abre la pantalla completa del hábito. Nunca inicia el conteo. */
+    fun openHabitFocus(habit: Habit, minutes: Int, isPomodoro: Boolean) {
+        val t = TimerManager.timerState.value
+        val sameHabitActive = t.habitId == habit.id && (t.isRunning || t.isPaused)
+        if (!sameHabitActive) {
+            if (t.isRunning || t.isPaused) {
+                TimerManager.discardSession(getApplication())
+            }
+            TimerManager.configureTimer(habit, isPomodoro, minutes)
+        }
+        _uiState.update { it.copy(habitFocusId = habit.id) }
+    }
+
+    fun changeHabitFocusMode(habit: Habit, isPomodoro: Boolean) {
+        TimerManager.configureTimer(habit, isPomodoro, suggestedFocusMinutes(habit))
+    }
+
+    /** Cierra la pantalla del hábito. Si la sesión corre, sigue en segundo plano. */
+    fun closeHabitFocus() {
+        _uiState.update { it.copy(habitFocusId = null, activeTab = NavigationTab.TODAY) }
+        restoreStandaloneIfIdle()
+    }
+
+    fun configureStandaloneTimer(isPomodoro: Boolean, minutes: Int) {
+        lastStandaloneIsPomodoro = isPomodoro
+        lastStandaloneMinutes = minutes
+        TimerManager.configureTimer(null, isPomodoro, minutes)
+    }
+
+    /** Inicia una sesión libre descartando sin guardar la sesión de hábito activa. */
+    fun startStandaloneDiscardingForeign(isPomodoro: Boolean, minutes: Int) {
+        lastStandaloneIsPomodoro = isPomodoro
+        lastStandaloneMinutes = minutes
+        TimerManager.startTimer(getApplication(), null, isPomodoro, minutes)
+    }
+
+    /** Si no hay sesión activa, deja el cronómetro con la última configuración de Enfoque. */
+    private fun restoreStandaloneIfIdle() {
+        val t = TimerManager.timerState.value
+        if (!t.isRunning && !t.isPaused) {
+            TimerManager.configureTimer(null, lastStandaloneIsPomodoro, lastStandaloneMinutes)
+        }
     }
 
     fun toggleTimerPlayPause() {
