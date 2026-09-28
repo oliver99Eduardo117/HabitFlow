@@ -509,8 +509,8 @@ fun HabitTileCard(
                     }
                 }
 
-                // Dedicated Pomodoro / Timer Button
-                FilledTonalButton(
+                // Dedicated Pomodoro / Timer Button (solo si el habito tiene temporizador activado)
+                if (habit.hasTimer) FilledTonalButton(
                     onClick = onStartTimer,
                     enabled = habitWithStats.isDependencyMet,
                     modifier = Modifier

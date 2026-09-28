@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,13 +49,19 @@ fun TimelineView(
         return
     }
 
+    // Orden cronologico: primero "Todo el dia" (sin recordatorio), luego por hora.
+    // sortedWith es estable: los empates conservan el orden manual (orderIndex).
+    val orderedHabits = remember(habits) {
+        habits.sortedWith(compareBy { reminderMinutesOfDay(it.habit.reminderTime) ?: -1 })
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        itemsIndexed(habits, key = { _, item -> item.habit.id }) { index, habitStat ->
+        itemsIndexed(orderedHabits, key = { _, item -> item.habit.id }) { index, habitStat ->
             val habit = habitStat.habit
             val habitColor = try {
                 Color(android.graphics.Color.parseColor(habit.colorHex))
@@ -97,7 +104,7 @@ fun TimelineView(
                             .background(animatedNodeColor)
                     )
 
-                    if (index < habits.size - 1) {
+                    if (index < orderedHabits.size - 1) {
                         Box(
                             modifier = Modifier
                                 .width(2.dp)
@@ -132,5 +139,15 @@ fun TimelineView(
             }
         }
     }
+}
+
+/** Minutos desde medianoche de una hora "HH:mm" (acepta "8:30"). Null si no hay hora valida. */
+private fun reminderMinutesOfDay(time: String?): Int? {
+    val parts = time?.trim()?.split(":") ?: return null
+    if (parts.size != 2) return null
+    val hour = parts[0].toIntOrNull() ?: return null
+    val minute = parts[1].toIntOrNull() ?: return null
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour * 60 + minute
 }
 
