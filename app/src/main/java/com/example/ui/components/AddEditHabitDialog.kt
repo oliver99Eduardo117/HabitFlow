@@ -52,7 +52,8 @@ fun AddEditHabitDialog(
     onCreateCategory: (Category) -> Unit = {},
     onOpenManageCategories: () -> Unit = {},
     onDeleteHabit: ((Long) -> Unit)? = null,
-    onTestReminder: ((Habit) -> Unit)? = null
+    onTestReminder: ((Habit) -> Unit)? = null,
+    initialSubTasks: List<String> = emptyList()
 ) {
     val context = LocalContext.current
     var title by remember { mutableStateOf(initialHabit?.title ?: "") }
@@ -80,7 +81,7 @@ fun AddEditHabitDialog(
 
     // Sub-tasks list
     var subTaskInput by remember { mutableStateOf("") }
-    val subTasks = remember { mutableStateListOf<String>() }
+    val subTasks = remember { mutableStateListOf<String>().apply { addAll(initialSubTasks) } }
 
     // Dependency
     var selectedDependencyId by remember { mutableStateOf<Long?>(initialHabit?.dependencyHabitId) }

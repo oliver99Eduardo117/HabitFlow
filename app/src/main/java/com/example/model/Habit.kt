@@ -44,5 +44,6 @@ data class HabitWithStats(
     val bestStreak: Int = 0,
     val totalCompletions: Int = 0,
     val subTasks: List<SubTask> = emptyList(),
-    val isDependencyMet: Boolean = true
+    val isDependencyMet: Boolean = true,
+    val isScheduled: Boolean = true
 )

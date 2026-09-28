@@ -30,6 +30,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.GamificationConfig
 import com.example.model.Habit
@@ -41,6 +44,8 @@ import com.example.util.DateUtils
 import com.example.viewmodel.HabitViewModel
 import com.example.viewmodel.NavigationTab
 import com.example.viewmodel.ProgressTab
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +57,19 @@ fun HabitFlowApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshDayIfChanged()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // Dialog States
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -101,9 +119,15 @@ fun HabitFlowApp(
         }
     }
 
+    // Habitos que corresponden a la fecha seleccionada: programados ese dia,
+    // o con registro ese dia aunque no esten programados
+    val dayHabits = remember(uiState.habits) {
+        uiState.habits.filter { it.isScheduled || it.todayLog != null }
+    }
+
     // Filter habits by category & search query
-    val filteredHabits = remember(uiState.habits, uiState.selectedCategory, uiState.searchQuery) {
-        uiState.habits.filter { habitStat ->
+    val filteredHabits = remember(dayHabits, uiState.selectedCategory, uiState.searchQuery) {
+        dayHabits.filter { habitStat ->
             val matchesCategory = uiState.selectedCategory == null || habitStat.habit.category == uiState.selectedCategory
             val matchesSearch = uiState.searchQuery.isEmpty() ||
                     habitStat.habit.title.contains(uiState.searchQuery, ignoreCase = true) ||
@@ -112,9 +136,14 @@ fun HabitFlowApp(
         }
     }
 
-    val completedTodayCount = uiState.habits.count { it.isCompletedToday }
-    val totalTodayHabits = maxOf(1, uiState.habits.size)
-    val todayCompletionPercentage = (completedTodayCount * 100) / totalTodayHabits
+    val completedTodayCount = dayHabits.count { it.isCompletedToday }
+    val totalTodayHabits = dayHabits.size
+    val todayCompletionPercentage = if (totalTodayHabits > 0) (completedTodayCount * 100) / totalTodayHabits else 0
+    val dayLabel = when (uiState.selectedDate) {
+        uiState.today -> "hoy"
+        DateUtils.getDaysAgoDateString(1) -> "ayer"
+        else -> "este día"
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -170,7 +199,7 @@ fun HabitFlowApp(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "$completedTodayCount/$totalTodayHabits hoy ($todayCompletionPercentage%)",
+                                text = if (totalTodayHabits > 0) "$completedTodayCount/$totalTodayHabits $dayLabel ($todayCompletionPercentage%)" else "Sin hábitos $dayLabel",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF10B981),
                                 fontWeight = FontWeight.Bold
@@ -342,8 +371,8 @@ fun HabitFlowApp(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val todayStr = remember { DateUtils.getTodayDateString() }
-                        val yesterdayStr = remember { DateUtils.getDaysAgoDateString(1) }
+                        val todayStr = uiState.today
+                        val yesterdayStr = remember(todayStr) { DateUtils.getDaysAgoDateString(1) }
 
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -381,11 +410,11 @@ fun HabitFlowApp(
                         FilterChip(
                             selected = uiState.selectedCategory == null,
                             onClick = { viewModel.setSelectedCategory(null) },
-                            label = { Text("Todos (${uiState.habits.size})") }
+                            label = { Text("Todos (${dayHabits.size})") }
                         )
 
                         uiState.categories.forEach { cat ->
-                            val count = uiState.habits.count { it.habit.category == cat.name }
+                            val count = dayHabits.count { it.habit.category == cat.name }
                             val catColor = try {
                                 Color(android.graphics.Color.parseColor(cat.colorHex))
                             } catch (_: Exception) {
@@ -550,13 +579,22 @@ fun HabitFlowApp(
                         }
 
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            if (filteredHabits.isEmpty()) {
+                            if (uiState.habits.isEmpty()) {
                                 EmptyHabitsState(
                                     onAddHabit = {
                                         editingHabit = null
                                         showAddEditDialog = true
                                     },
                                     onPickTemplate = { showTemplatePicker = true }
+                                )
+                            } else if (filteredHabits.isEmpty()) {
+                                val hasFilter = uiState.selectedCategory != null || uiState.searchQuery.isNotEmpty()
+                                NoHabitsForDayState(
+                                    hasActiveFilter = hasFilter,
+                                    onClearFilters = {
+                                        viewModel.setSelectedCategory(null)
+                                        viewModel.setSearchQuery("")
+                                    }
                                 )
                             } else {
                                 when (uiState.layoutMode) {
@@ -703,9 +741,17 @@ fun HabitFlowApp(
     }
 
     // Add / Edit Habit Dialog
-    if (showAddEditDialog) {
+    val editingId = editingHabit?.id ?: 0L
+    val editingSubTasks by remember(editingId) {
+        if (editingId == 0L) flowOf(0L to emptyList<String>())
+        else viewModel.subTasksFor(editingId).map { list -> editingId to list.map { it.title } }
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val readySubTasks = editingSubTasks?.takeIf { it.first == editingId }?.second
+
+    if (showAddEditDialog && readySubTasks != null) {
         AddEditHabitDialog(
             initialHabit = editingHabit,
+            initialSubTasks = readySubTasks,
             categories = uiState.categories,
             allHabits = uiState.habits.map { it.habit },
             onDismiss = { showAddEditDialog = false },
@@ -1029,6 +1075,42 @@ private fun EmptyHabitsState(
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFF59E0B))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Plantillas")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoHabitsForDayState(
+    hasActiveFilter: Boolean,
+    onClearFilters: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = if (hasActiveFilter) Icons.Default.SearchOff else Icons.Default.EventAvailable,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(40.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (hasActiveFilter) "Ningún hábito coincide con el filtro" else "No hay hábitos programados para este día",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        if (hasActiveFilter) {
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onClearFilters, shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Default.FilterAltOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Limpiar filtros")
             }
         }
     }

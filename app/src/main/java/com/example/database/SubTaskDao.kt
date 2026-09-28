@@ -24,6 +24,15 @@ interface SubTaskDao {
     @Query("UPDATE sub_tasks SET isCompleted = :isCompleted WHERE id = :id")
     suspend fun setSubTaskCompleted(id: Long, isCompleted: Boolean)
 
+    @Query("SELECT * FROM sub_tasks WHERE id = :id LIMIT 1")
+    suspend fun getSubTaskById(id: Long): SubTask?
+
+    @Query("SELECT * FROM sub_tasks WHERE habitId = :habitId ORDER BY id ASC")
+    suspend fun getSubTasksForHabitOnce(habitId: Long): List<SubTask>
+
+    @Query("UPDATE sub_tasks SET isCompleted = :isCompleted, date = :date WHERE id = :id")
+    suspend fun setSubTaskCompletedForDate(id: Long, isCompleted: Boolean, date: String)
+
     @Query("DELETE FROM sub_tasks WHERE id = :id")
     suspend fun deleteSubTask(id: Long)
 

@@ -514,7 +514,9 @@ fun HabitTileCard(
                 )
 
                 Button(
-                    onClick = onToggleCompletion,
+                    // En habitos cuantitativos ya completados, tocar "Hecho" abre el registro
+                    // para ajustar el valor en lugar de borrar el progreso de un toque
+                    onClick = if (habit.unit.isNotEmpty() && isCompleted) onOpenProgressDialog else onToggleCompletion,
                     enabled = habitWithStats.isDependencyMet,
                     modifier = Modifier
                         .weight(if (habit.unit.isEmpty()) 1f else 0.8f)

@@ -65,6 +65,7 @@ class HabitRepository(
             val logsByHabit = logs.groupBy { it.habitId }
             val logsByHabitAndDate = logs.associateBy { "${it.habitId}_${it.date}" }
             val subTasksByHabit = allSubTasks.groupBy { it.habitId }
+            val dayOfWeek = DateUtils.getDayOfWeek(selectedDate) // 1 = lunes, 7 = domingo
 
             habits.map { habit ->
                 val habitLogs = logsByHabit[habit.id] ?: emptyList()
@@ -88,8 +89,11 @@ class HabitRepository(
                     currentStreak = currentStreak,
                     bestStreak = bestStreak,
                     totalCompletions = completedDates.size,
-                    subTasks = subTasksByHabit[habit.id] ?: emptyList(),
-                    isDependencyMet = isDependencyMet
+                    subTasks = (subTasksByHabit[habit.id] ?: emptyList()).map { st ->
+                        st.copy(isCompleted = st.isCompleted && st.date == selectedDate)
+                    },
+                    isDependencyMet = isDependencyMet,
+                    isScheduled = habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays
                 )
             }
         }
@@ -103,12 +107,21 @@ class HabitRepository(
             habit.id
         }
 
-        if (subTaskTitles.isNotEmpty()) {
-            subTaskDao.deleteSubTasksForHabit(habitId)
-            val subTasks = subTaskTitles.map { title ->
-                SubTask(habitId = habitId, title = title, isCompleted = false)
+        val wantedTitles = subTaskTitles.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (habit.id == 0L) {
+            // Habito nuevo: insertar las sub-rutinas recibidas
+            if (wantedTitles.isNotEmpty()) {
+                subTaskDao.insertSubTasks(wantedTitles.map { SubTask(habitId = habitId, title = it) })
             }
-            subTaskDao.insertSubTasks(subTasks)
+        } else {
+            // Edicion: sincronizar conservando el estado de las que no cambiaron
+            val existing = subTaskDao.getSubTasksForHabitOnce(habitId)
+            existing.filter { it.title !in wantedTitles }.forEach { subTaskDao.deleteSubTask(it.id) }
+            val existingTitles = existing.map { it.title }.toSet()
+            val toInsert = wantedTitles.filter { it !in existingTitles }
+            if (toInsert.isNotEmpty()) {
+                subTaskDao.insertSubTasks(toInsert.map { SubTask(habitId = habitId, title = it) })
+            }
         }
 
         if (habit.reminderTime != null) {
@@ -147,30 +160,20 @@ class HabitRepository(
         value: Float,
         notes: String = ""
     ): Int = withContext(Dispatchers.IO) {
+        val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
-        val habit = habitDao.getHabitById(habitId)
-        val target = habit?.targetValue ?: 1f
-        val wasCompleted = existingLog != null && existingLog.value >= target
-        val isNowCompleted = value >= target
-        var earnedXp = 0
+        val newValue: Float? = if (value <= 0f) null else value
 
-        if (value <= 0f) {
+        if (newValue == null) {
             habitLogDao.deleteLog(habitId, date)
-            if (wasCompleted) {
-                deductXpForCompletion(habit, existingLog?.value ?: target)
-            }
         } else {
-            val log = existingLog?.copy(value = value, notes = notes, timestamp = System.currentTimeMillis())
-                ?: HabitLog(habitId = habitId, date = date, value = value, notes = notes)
+            val log = existingLog?.copy(value = newValue, notes = notes, timestamp = System.currentTimeMillis())
+                ?: HabitLog(habitId = habitId, date = date, value = newValue, notes = notes)
             habitLogDao.insertOrUpdateLog(log)
-
-            if (!wasCompleted && isNowCompleted) {
-                earnedXp = awardXpForCompletion(habit, value)
-            } else if (wasCompleted && !isNowCompleted) {
-                deductXpForCompletion(habit, existingLog?.value ?: target)
-            }
         }
-        if (isNowCompleted && date == DateUtils.getTodayDateString()) {
+
+        val earnedXp = applyCompletionChange(habit, existingLog?.value, newValue)
+        if (newValue != null && newValue >= habit.targetValue && date == DateUtils.getTodayDateString()) {
             NotificationHelper.dismissActiveReminder(context, habitId)
         }
         earnedXp
@@ -191,31 +194,32 @@ class HabitRepository(
     }
 
     suspend fun toggleHabitCompletion(habitId: Long, date: String): Int = withContext(Dispatchers.IO) {
-        val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
+        val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
+        val isDone = existingLog != null && existingLog.value >= habit.targetValue
 
-        val earnedXp = if (existingLog != null && existingLog.value >= habit.targetValue) {
+        val newValue: Float? = if (isDone) {
             habitLogDao.deleteLog(habitId, date)
-            deductXpForCompletion(habit, existingLog.value)
-            0
+            null
         } else {
-            val log = HabitLog(
-                habitId = habitId,
-                date = date,
-                value = habit.targetValue,
-                timestamp = System.currentTimeMillis()
-            )
+            // Completar conserva el registro existente (notas, id) y solo sube el valor a la meta
+            val log = existingLog?.copy(value = habit.targetValue, timestamp = System.currentTimeMillis())
+                ?: HabitLog(habitId = habitId, date = date, value = habit.targetValue, timestamp = System.currentTimeMillis())
             habitLogDao.insertOrUpdateLog(log)
             if (date == DateUtils.getTodayDateString()) {
                 NotificationHelper.dismissActiveReminder(context, habitId)
             }
-            awardXpForCompletion(habit, habit.targetValue)
+            habit.targetValue
         }
-        earnedXp
+
+        applyCompletionChange(habit, existingLog?.value, newValue)
     }
 
-    suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean): Int = withContext(Dispatchers.IO) {
-        subTaskDao.setSubTaskCompleted(subTaskId, isCompleted)
+    suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean, date: String): Int = withContext(Dispatchers.IO) {
+        val subTask = subTaskDao.getSubTaskById(subTaskId) ?: return@withContext 0
+        val wasCompletedForDate = subTask.isCompleted && subTask.date == date
+        if (isCompleted == wasCompletedForDate) return@withContext 0
+        subTaskDao.setSubTaskCompletedForDate(subTaskId, isCompleted, date)
         if (isCompleted) {
             awardXpForSubTask()
         } else {
@@ -285,61 +289,51 @@ class HabitRepository(
         habitDao.getHabitsCountByCategory(categoryName)
     }
 
-    private suspend fun awardXpForCompletion(habit: Habit?, completedValue: Float): Int {
-        val currentStats = userStatsDao.getUserStats() ?: UserStats()
-        var baseHabitXp = GamificationConfig.XP_HABIT_COMPLETION
-        if (habit != null && completedValue > habit.targetValue) {
-            baseHabitXp += GamificationConfig.XP_OVERACHIEVEMENT_BONUS
-        }
-        val earnedXp = if (currentStats.isHardcoreMode) {
-            (baseHabitXp * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
-        } else {
-            baseHabitXp
-        }
-
-        val newXp = currentStats.xp + earnedXp
-        val newLevel = GamificationConfig.calculateLevel(newXp)
-        val newTotalCheckIns = currentStats.totalCheckIns + 1
-
-        // Calculate best streak from all logs
-        val allLogs = habitLogDao.getAllLogs().first()
-        val datesWithCompletion = allLogs.filter { it.value > 0f }.map { it.date }.toSet()
-        val (_, bestStreak) = DateUtils.calculateStreak(datesWithCompletion)
-        val allTimeBest = maxOf(currentStats.bestStreakAllTime, bestStreak)
-
-        val updated = currentStats.copy(
-            xp = newXp,
-            level = newLevel,
-            totalCheckIns = newTotalCheckIns,
-            bestStreakAllTime = allTimeBest,
-            lastActiveDate = DateUtils.getTodayDateString()
-        )
-        checkAndSaveGamification(updated)
-        return earnedXp
+    /** XP que vale un registro con este valor. 0 si no alcanza la meta. */
+    private fun completionXp(habit: Habit, value: Float?, hardcore: Boolean): Int {
+        if (value == null || value < habit.targetValue) return 0
+        var base = GamificationConfig.XP_HABIT_COMPLETION
+        if (value > habit.targetValue) base += GamificationConfig.XP_OVERACHIEVEMENT_BONUS
+        return if (hardcore) (base * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else base
     }
 
-    private suspend fun deductXpForCompletion(habit: Habit?, previousValue: Float) {
-        val currentStats = userStatsDao.getUserStats() ?: UserStats()
-        var baseHabitXp = GamificationConfig.XP_HABIT_COMPLETION
-        if (habit != null && previousValue > habit.targetValue) {
-            baseHabitXp += GamificationConfig.XP_OVERACHIEVEMENT_BONUS
-        }
-        val lostXp = if (currentStats.isHardcoreMode) {
-            (baseHabitXp * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
-        } else {
-            baseHabitXp
-        }
+    /**
+     * Aplica al perfil la diferencia de XP entre el valor anterior y el nuevo de un registro.
+     * Debe llamarse DESPUES de escribir el registro en la base de datos.
+     * Devuelve el XP ganado (0 si fue neutro o negativo).
+     */
+    private suspend fun applyCompletionChange(habit: Habit, oldValue: Float?, newValue: Float?): Int {
+        val stats = userStatsDao.getUserStats() ?: UserStats()
+        val oldXp = completionXp(habit, oldValue, stats.isHardcoreMode)
+        val newXp = completionXp(habit, newValue, stats.isHardcoreMode)
+        val delta = newXp - oldXp
+        val wasCompleted = oldXp > 0
+        val isCompleted = newXp > 0
+        if (delta == 0 && wasCompleted == isCompleted) return 0
 
-        val newXp = maxOf(0, currentStats.xp - lostXp)
-        val newLevel = GamificationConfig.calculateLevel(newXp)
-        val newTotalCheckIns = maxOf(0, currentStats.totalCheckIns - 1)
-
-        val updated = currentStats.copy(
-            xp = newXp,
-            level = newLevel,
-            totalCheckIns = newTotalCheckIns
+        val totalXp = maxOf(0, stats.xp + delta)
+        var updated = stats.copy(
+            xp = totalXp,
+            level = GamificationConfig.calculateLevel(totalXp),
+            totalCheckIns = when {
+                isCompleted && !wasCompleted -> stats.totalCheckIns + 1
+                wasCompleted && !isCompleted -> maxOf(0, stats.totalCheckIns - 1)
+                else -> stats.totalCheckIns
+            }
         )
-        userStatsDao.insertOrUpdate(updated)
+
+        if (isCompleted && !wasCompleted) {
+            val allLogs = habitLogDao.getAllLogs().first()
+            val datesWithCompletion = allLogs.filter { it.value > 0f }.map { it.date }.toSet()
+            val (_, bestStreak) = DateUtils.calculateStreak(datesWithCompletion)
+            updated = updated.copy(
+                bestStreakAllTime = maxOf(stats.bestStreakAllTime, bestStreak),
+                lastActiveDate = DateUtils.getTodayDateString()
+            )
+        }
+
+        if (delta > 0) checkAndSaveGamification(updated) else userStatsDao.insertOrUpdate(updated)
+        return maxOf(0, delta)
     }
 
     private suspend fun checkAndSaveGamification(stats: UserStats) {

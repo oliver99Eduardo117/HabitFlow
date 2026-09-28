@@ -45,6 +45,7 @@ data class ActiveTimerState(
 
 data class HabitUiState(
     val selectedDate: String = DateUtils.getTodayDateString(),
+    val today: String = DateUtils.getTodayDateString(),
     val habits: List<HabitWithStats> = emptyList(),
     val archivedHabits: List<Habit> = emptyList(),
     val categories: List<Category> = emptyList(),
@@ -188,6 +189,17 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Cambio de dia con la app en primer plano: esperar a la proxima medianoche y refrescar
+        viewModelScope.launch {
+            while (true) {
+                val now = java.time.LocalDateTime.now()
+                val nextMidnight = now.toLocalDate().plusDays(1).atStartOfDay()
+                val waitMs = java.time.Duration.between(now, nextMidnight).toMillis() + 1_000L
+                kotlinx.coroutines.delay(waitMs)
+                refreshDayIfChanged()
+            }
+        }
+
         // Load AI Insights
         refreshInsights()
     }
@@ -265,6 +277,17 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSelectedDate(date: String) {
         _uiState.update { it.copy(selectedDate = date) }
+    }
+
+    /**
+     * Si el dia calendario cambio desde la ultima lectura, actualiza `today`
+     * y regresa la fecha seleccionada al dia nuevo para no escribir en un dia viejo.
+     */
+    fun refreshDayIfChanged() {
+        val now = DateUtils.getTodayDateString()
+        if (now != _uiState.value.today) {
+            _uiState.update { it.copy(today = now, selectedDate = now) }
+        }
     }
 
     fun setNavigationTab(tab: NavigationTab) {
@@ -354,7 +377,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) {
         viewModelScope.launch {
-            val gainedXp = repository.toggleSubTask(subTaskId, isCompleted)
+            val gainedXp = repository.toggleSubTask(subTaskId, isCompleted, _uiState.value.selectedDate)
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
             }
@@ -373,6 +396,8 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(snackbarMessage = "Hábito guardado correctamente") }
         }
     }
+
+    fun subTasksFor(habitId: Long): Flow<List<SubTask>> = repository.getSubTasksForHabit(habitId)
 
     fun applyTemplate(template: HabitTemplate) {
         viewModelScope.launch {
