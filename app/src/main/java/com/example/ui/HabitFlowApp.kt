@@ -663,7 +663,11 @@ fun HabitFlowApp(
                                                 editingHabit = it.habit
                                                 showAddEditDialog = true
                                             },
-                                            onArchiveHabit = { viewModel.setArchived(it, true) }
+                                            onArchiveHabit = { viewModel.setArchived(it, true) },
+                                            onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
+                                            onViewDetail = { selectedDetailHabit = it },
+                                            onDeleteHabit = { viewModel.deleteHabit(it) },
+                                            onTestReminder = { viewModel.testHabitReminder(it.habit) }
                                         )
                                     }
 
@@ -677,7 +681,11 @@ fun HabitFlowApp(
                                                 editingHabit = it.habit
                                                 showAddEditDialog = true
                                             },
-                                            onArchiveHabit = { viewModel.setArchived(it, true) }
+                                            onArchiveHabit = { viewModel.setArchived(it, true) },
+                                            onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
+                                            onViewDetail = { selectedDetailHabit = it },
+                                            onDeleteHabit = { viewModel.deleteHabit(it) },
+                                            onTestReminder = { viewModel.testHabitReminder(it.habit) }
                                         )
                                     }
                                 }

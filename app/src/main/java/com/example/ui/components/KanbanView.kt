@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.HabitWithStats
+import com.example.model.SubTask
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -27,6 +28,10 @@ fun KanbanView(
     onStartTimer: (HabitWithStats) -> Unit,
     onEditHabit: (HabitWithStats) -> Unit,
     onArchiveHabit: (Long) -> Unit,
+    onToggleSubTask: (SubTask, Boolean) -> Unit = { _, _ -> },
+    onViewDetail: (HabitWithStats) -> Unit = {},
+    onDeleteHabit: ((Long) -> Unit)? = null,
+    onTestReminder: ((HabitWithStats) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val todoHabits = habits.filter { !it.isCompletedToday && (it.todayLog?.value ?: 0f) == 0f }
@@ -50,6 +55,10 @@ fun KanbanView(
             onStartTimer = onStartTimer,
             onEditHabit = onEditHabit,
             onArchiveHabit = onArchiveHabit,
+            onToggleSubTask = onToggleSubTask,
+            onViewDetail = onViewDetail,
+            onDeleteHabit = onDeleteHabit,
+            onTestReminder = onTestReminder,
             modifier = Modifier.width(300.dp)
         )
 
@@ -63,6 +72,10 @@ fun KanbanView(
             onStartTimer = onStartTimer,
             onEditHabit = onEditHabit,
             onArchiveHabit = onArchiveHabit,
+            onToggleSubTask = onToggleSubTask,
+            onViewDetail = onViewDetail,
+            onDeleteHabit = onDeleteHabit,
+            onTestReminder = onTestReminder,
             modifier = Modifier.width(300.dp)
         )
 
@@ -76,6 +89,10 @@ fun KanbanView(
             onStartTimer = onStartTimer,
             onEditHabit = onEditHabit,
             onArchiveHabit = onArchiveHabit,
+            onToggleSubTask = onToggleSubTask,
+            onViewDetail = onViewDetail,
+            onDeleteHabit = onDeleteHabit,
+            onTestReminder = onTestReminder,
             modifier = Modifier.width(300.dp)
         )
     }
@@ -93,6 +110,10 @@ private fun KanbanColumn(
     onStartTimer: (HabitWithStats) -> Unit,
     onEditHabit: (HabitWithStats) -> Unit,
     onArchiveHabit: (Long) -> Unit,
+    onToggleSubTask: (SubTask, Boolean) -> Unit = { _, _ -> },
+    onViewDetail: (HabitWithStats) -> Unit = {},
+    onDeleteHabit: ((Long) -> Unit)? = null,
+    onTestReminder: ((HabitWithStats) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -174,9 +195,12 @@ private fun KanbanColumn(
                                 onToggleCompletion = { onToggleCompletion(habitStat.habit.id) },
                                 onOpenProgressDialog = { onOpenProgressDialog(habitStat) },
                                 onStartTimer = { onStartTimer(habitStat) },
-                                onToggleSubTask = { _, _ -> },
+                                onToggleSubTask = onToggleSubTask,
                                 onEditHabit = { onEditHabit(habitStat) },
-                                onArchiveHabit = { onArchiveHabit(habitStat.habit.id) }
+                                onArchiveHabit = { onArchiveHabit(habitStat.habit.id) },
+                                onViewDetail = { onViewDetail(habitStat) },
+                                onDeleteHabit = onDeleteHabit?.let { delete -> { delete(habitStat.habit.id) } },
+                                onTestReminder = onTestReminder?.let { test -> { test(habitStat) } }
                             )
                         }
                     }

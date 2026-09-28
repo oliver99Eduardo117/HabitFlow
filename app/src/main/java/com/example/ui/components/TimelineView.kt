@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.HabitWithStats
+import com.example.model.SubTask
 
 @Composable
 fun TimelineView(
@@ -27,6 +28,10 @@ fun TimelineView(
     onStartTimer: (HabitWithStats) -> Unit,
     onEditHabit: (HabitWithStats) -> Unit,
     onArchiveHabit: (Long) -> Unit,
+    onToggleSubTask: (SubTask, Boolean) -> Unit = { _, _ -> },
+    onViewDetail: (HabitWithStats) -> Unit = {},
+    onDeleteHabit: ((Long) -> Unit)? = null,
+    onTestReminder: ((HabitWithStats) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (habits.isEmpty()) {
@@ -116,9 +121,12 @@ fun TimelineView(
                         onToggleCompletion = { onToggleCompletion(habitStat.habit.id) },
                         onOpenProgressDialog = { onOpenProgressDialog(habitStat) },
                         onStartTimer = { onStartTimer(habitStat) },
-                        onToggleSubTask = { _, _ -> },
+                        onToggleSubTask = onToggleSubTask,
                         onEditHabit = { onEditHabit(habitStat) },
-                        onArchiveHabit = { onArchiveHabit(habitStat.habit.id) }
+                        onArchiveHabit = { onArchiveHabit(habitStat.habit.id) },
+                        onViewDetail = { onViewDetail(habitStat) },
+                        onDeleteHabit = onDeleteHabit?.let { delete -> { delete(habitStat.habit.id) } },
+                        onTestReminder = onTestReminder?.let { test -> { test(habitStat) } }
                     )
                 }
             }
