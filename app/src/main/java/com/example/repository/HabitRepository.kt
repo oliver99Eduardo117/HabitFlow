@@ -234,8 +234,12 @@ class HabitRepository(
         minutes: Float,
         notes: String = ""
     ): Int = withContext(Dispatchers.IO) {
-        val existing = habitLogDao.getLogForHabitAndDate(habitId, date)?.value ?: 0f
-        recordHabitProgress(habitId, date, existing + minutes, notes)
+        val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
+        val existingValue = existingLog?.value ?: 0f
+        val existingNotes = existingLog?.notes.orEmpty()
+        // Conservar la nota escrita a mano; solo se reemplaza una nota vacia o una automatica anterior
+        val finalNotes = if (existingNotes.isBlank() || existingNotes.startsWith("Sesión de enfoque")) notes else existingNotes
+        recordHabitProgress(habitId, date, existingValue + minutes, finalNotes)
     }
 
     suspend fun toggleHabitCompletion(habitId: Long, date: String): Int = withContext(Dispatchers.IO) {

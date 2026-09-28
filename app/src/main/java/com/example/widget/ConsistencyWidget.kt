@@ -3,6 +3,9 @@ package com.example.widget
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,9 +44,13 @@ class ConsistencyWidget : GlanceAppWidget() {
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
 
-        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
+        val initialHabits = try {
+            WidgetRepositoryProvider.habitsWithStatsFlow(context, today).first()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
-        val allLogs = try {
+        val initialLogs = try {
             repository.allLogs.first()
         } catch (_: Exception) {
             emptyList()
@@ -55,6 +62,10 @@ class ConsistencyWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            val habitsWithStats by WidgetRepositoryProvider.habitsWithStatsFlow(context, today)
+                .collectAsState(initial = initialHabits)
+            val allLogs by repository.allLogs.collectAsState(initial = initialLogs)
+
             val size = LocalSize.current
             val density = context.resources.displayMetrics.density
 
@@ -64,8 +75,8 @@ class ConsistencyWidget : GlanceAppWidget() {
             val targetHabitWithStats = if (selectedHabitId != null) {
                 habitsWithStats.find { it.habit.id == selectedHabitId }
             } else {
-                null
-            } ?: habitsWithStats.maxByOrNull { it.currentStreak }
+                habitsWithStats.maxByOrNull { it.currentStreak }
+            }
 
             Box(
                 modifier = GlanceModifier
@@ -79,8 +90,9 @@ class ConsistencyWidget : GlanceAppWidget() {
                     val habit = targetHabitWithStats.habit
                     val habitLogs = allLogs.filter { it.habitId == habit.id }
                     val completedDates = habitLogs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
-                    val (currentStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
-                    val totalActiveDays = completedDates.size
+                    val currentStreak = targetHabitWithStats.currentStreak
+                    val bestStreak = targetHabitWithStats.bestStreak
+                    val totalActiveDays = targetHabitWithStats.totalCompletions
 
                     val weeks = if (size.width < 220.dp) 10 else 14
                     val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
@@ -97,20 +109,28 @@ class ConsistencyWidget : GlanceAppWidget() {
                     val targetHeatmapHeightPx = ((size.height.value - 64f) * density).toInt().coerceAtLeast(50)
 
                     val uncompletedColorInt = 0x38334155
-                    val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHeatmapBitmap(
-                        columns = weeks,
-                        monthPositions = monthPositions,
-                        targetWidthPx = targetHeatmapWidthPx,
-                        targetHeightPx = targetHeatmapHeightPx,
-                        cellColorProvider = { col, row ->
-                            val dateStr = dateMatrix.getOrNull(col)?.getOrNull(row)
-                            if (dateStr != null && completedDates.contains(dateStr)) {
-                                habitColorInt
-                            } else {
-                                uncompletedColorInt
+                    val heatmapBitmap: Bitmap = remember(
+                        completedDates,
+                        habitColorInt,
+                        weeks,
+                        targetHeatmapWidthPx,
+                        targetHeatmapHeightPx
+                    ) {
+                        WidgetBitmapUtils.createHeatmapBitmap(
+                            columns = weeks,
+                            monthPositions = monthPositions,
+                            targetWidthPx = targetHeatmapWidthPx,
+                            targetHeightPx = targetHeatmapHeightPx,
+                            cellColorProvider = { col, row ->
+                                val dateStr = dateMatrix.getOrNull(col)?.getOrNull(row)
+                                if (dateStr != null && completedDates.contains(dateStr)) {
+                                    habitColorInt
+                                } else {
+                                    uncompletedColorInt
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
 
                     Column(
                         modifier = GlanceModifier.fillMaxSize()
@@ -205,9 +225,10 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     )
                                     Text(
                                         text = "Racha",
+                                        maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 6.5.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -243,9 +264,10 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     )
                                     Text(
                                         text = "Mejor",
+                                        maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 6.5.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -281,9 +303,10 @@ class ConsistencyWidget : GlanceAppWidget() {
                                     )
                                     Text(
                                         text = "Total",
+                                        maxLines = 1,
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 6.5.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Normal
                                         )
                                     )
@@ -310,14 +333,19 @@ class ConsistencyWidget : GlanceAppWidget() {
                     }
                 } else {
                     // Empty state
+                    val emptyMessage = if (habitsWithStats.isEmpty()) {
+                        "Crea un hábito en la app para ver su constancia"
+                    } else {
+                        "El hábito de este widget ya no está activo. Mantén presionado el widget para reconfigurarlo."
+                    }
                     Column(
                         modifier = GlanceModifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Configura este widget desde el picker de widgets",
-                            maxLines = 3,
+                            text = emptyMessage,
+                            maxLines = 4,
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextSecondary),
                                 fontSize = 12.sp,

@@ -16,7 +16,6 @@ object WidgetUpdater {
 
     fun scheduleRefresh(context: Context) {
         val appContext = context.applicationContext
-        WidgetRepositoryProvider.invalidateHabitsCache()
         pendingJob?.cancel()
         pendingJob = scope.launch {
             delay(120)
@@ -30,7 +29,6 @@ object WidgetUpdater {
 
     suspend fun refreshAll(context: Context) {
         val appContext = context.applicationContext
-        WidgetRepositoryProvider.invalidateHabitsCache()
 
         val startTime = System.currentTimeMillis()
         coroutineScope {

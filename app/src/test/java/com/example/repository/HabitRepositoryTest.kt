@@ -304,4 +304,21 @@ class HabitRepositoryTest {
         assertTrue(item.isDependencyMet)
         assertEquals(25, repository.toggleHabitCompletion(dependent, today))
     }
+
+    @Test
+    fun `timer session keeps a handwritten note and replaces only automatic ones`() = runTest {
+        val today = DateUtils.getTodayDateString()
+
+        val reading = repository.saveHabit(Habit(title = "Leer", unit = "min", targetValue = 30f))
+        repository.recordHabitProgress(reading, today, 10f, "Capitulo 3")
+        repository.addTimerProgress(reading, today, 15f, "Sesión de enfoque: 15 min")
+        val readingLog = database.habitLogDao().getLogForHabitAndDate(reading, today)
+        assertEquals(25f, readingLog?.value ?: 0f, 0.001f)
+        assertEquals("Capitulo 3", readingLog?.notes)
+
+        val meditation = repository.saveHabit(Habit(title = "Meditar", unit = "min", targetValue = 15f))
+        repository.addTimerProgress(meditation, today, 5f, "Sesión de enfoque: 5 min")
+        repository.addTimerProgress(meditation, today, 10f, "Sesión de enfoque: 10 min")
+        assertEquals("Sesión de enfoque: 10 min", database.habitLogDao().getLogForHabitAndDate(meditation, today)?.notes)
+    }
 }

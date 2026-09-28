@@ -3,6 +3,9 @@ package com.example.widget
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -29,21 +32,11 @@ class DailyProgressWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = DateUtils.getTodayDateString()
-        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
-
-        val totalHabits = habitsWithStats.size
-        val completedHabits = habitsWithStats.count { it.isCompletedToday }
-        val ratio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
-        val percentage = (ratio * 100).toInt()
-
-        val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
-            percentage = percentage,
-            sizePx = 210,
-            strokeWidthPx = 18f,
-            trackColorInt = 0xFF334155.toInt(),
-            progressColorInt = 0xFF6366F1.toInt(),
-            completedColorInt = 0xFF6366F1.toInt()
-        )
+        val initialHabits = try {
+            WidgetRepositoryProvider.habitsWithStatsFlow(context, today).first()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -51,6 +44,26 @@ class DailyProgressWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            val habitsWithStats by WidgetRepositoryProvider.habitsWithStatsFlow(context, today)
+                .collectAsState(initial = initialHabits)
+            val todayHabits = habitsWithStats.forToday()
+
+            val totalHabits = todayHabits.size
+            val completedHabits = todayHabits.count { it.isCompletedToday }
+            val ratio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
+            val percentage = (ratio * 100).toInt()
+
+            val progressRingBitmap: Bitmap = remember(percentage) {
+                WidgetBitmapUtils.createProgressRingBitmap(
+                    percentage = percentage,
+                    sizePx = 210,
+                    strokeWidthPx = 18f,
+                    trackColorInt = 0xFF334155.toInt(),
+                    progressColorInt = 0xFF6366F1.toInt(),
+                    completedColorInt = 0xFF10B981.toInt()
+                )
+            }
+
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()

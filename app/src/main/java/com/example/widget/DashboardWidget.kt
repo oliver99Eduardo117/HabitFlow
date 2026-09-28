@@ -3,6 +3,9 @@ package com.example.widget
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +40,8 @@ import com.example.model.HabitWithStats
 import com.example.util.DateUtils
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 
@@ -49,15 +54,19 @@ class DashboardWidget : GlanceAppWidget() {
         val repository = WidgetRepositoryProvider.getRepository(context)
         val today = DateUtils.getTodayDateString()
 
-        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
+        val initialHabits = try {
+            WidgetRepositoryProvider.habitsWithStatsFlow(context, today).first()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
-        val allLogs = try {
+        val initialLogs = try {
             repository.allLogs.first()
         } catch (_: Exception) {
             emptyList()
         }
 
-        val activeHabits = try {
+        val initialActiveHabits = try {
             repository.activeHabits.first()
         } catch (_: Exception) {
             emptyList()
@@ -76,56 +85,77 @@ class DashboardWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            val habitsWithStats by WidgetRepositoryProvider.habitsWithStatsFlow(context, today)
+                .collectAsState(initial = initialHabits)
+            val allLogs by repository.allLogs.collectAsState(initial = initialLogs)
+            val activeHabits by repository.activeHabits.collectAsState(initial = initialActiveHabits)
+
             val size = LocalSize.current
             val density = context.resources.displayMetrics.density
 
             // 1. Single unified source of truth for daily progress & counts from Room
-            val totalHabits = habitsWithStats.size
-            val completedHabits = habitsWithStats.count { it.isCompletedToday }
+            val todayHabits = habitsWithStats.forToday()
+            val totalHabits = todayHabits.size
+            val completedHabits = todayHabits.count { it.isCompletedToday }
             val progressRatio = if (totalHabits > 0) completedHabits.toFloat() / totalHabits else 0f
             val percentage = (progressRatio * 100).toInt()
 
             // 2. Checklist items (take 3 for Dashboard)
-            val displayHabits = habitsWithStats.take(3)
+            val displayHabits = todayHabits.take(3)
 
             // Top streak
             val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
 
             // 3. Progress Ring Bitmap (derived strictly from percentage)
-            val progressRingBitmap: Bitmap = WidgetBitmapUtils.createProgressRingBitmap(
-                percentage = percentage,
-                sizePx = 120,
-                strokeWidthPx = 12f,
-                trackColorInt = 0xFF334155.toInt(),
-                progressColorInt = 0xFF6366F1.toInt(),
-                completedColorInt = 0xFF10B981.toInt()
-            )
+            val progressRingBitmap: Bitmap = remember(percentage) {
+                WidgetBitmapUtils.createProgressRingBitmap(
+                    percentage = percentage,
+                    sizePx = 120,
+                    strokeWidthPx = 12f,
+                    trackColorInt = 0xFF334155.toInt(),
+                    progressColorInt = 0xFF6366F1.toInt(),
+                    completedColorInt = 0xFF10B981.toInt()
+                )
+            }
 
             // 5. Adaptive heatmap generation based on available width & height
             val weeks = if (size.width < 220.dp) 10 else 14
             val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
             val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
 
-            val totalActive = maxOf(1, activeHabits.size)
             val activeHabitsById = activeHabits.associateBy { it.id }
+            val zoneId = ZoneId.systemDefault()
+            val createdDateByHabitId = activeHabits.associate { habit ->
+                val createdDate = Instant.ofEpochMilli(habit.createdAt)
+                    .atZone(zoneId)
+                    .toLocalDate()
+                    .toString()
+                habit.id to createdDate
+            }
             val allLogsByDate = allLogs.groupBy { it.date }
 
             val ratioMatrix: List<List<Float>> = dateMatrix.map { week ->
                 week.map { dateStr ->
-                    if (dateStr == today) {
-                        progressRatio
-                    } else {
-                        val dayLogs = allLogsByDate[dateStr] ?: emptyList()
-                        val doneCount = dayLogs.count { log ->
-                            val habit = activeHabitsById[log.habitId]
-                            habit != null && log.value >= habit.targetValue
-                        }
-                        if (activeHabits.isNotEmpty()) {
-                            (doneCount.toFloat() / totalActive).coerceIn(0f, 1f)
-                        } else if (doneCount > 0) {
-                            1f
-                        } else {
-                            0f
+                    when {
+                        dateStr == today -> progressRatio
+                        dateStr > today -> 0f
+                        else -> {
+                            val dayOfWeek = DateUtils.getDayOfWeek(dateStr)
+                            val scheduledForDay = activeHabits.count { habit ->
+                                val createdDate = createdDateByHabitId[habit.id] ?: ""
+                                createdDate <= dateStr &&
+                                    (habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays)
+                            }
+                            if (scheduledForDay == 0) {
+                                0f
+                            } else {
+                                val dayLogs = allLogsByDate[dateStr] ?: emptyList()
+                                val doneCount = dayLogs.count { log ->
+                                    val habit = activeHabitsById[log.habitId]
+                                    habit != null && log.value >= habit.targetValue
+                                }
+                                (doneCount.toFloat() / scheduledForDay).coerceIn(0f, 1f)
+                            }
                         }
                     }
                 }
@@ -135,16 +165,18 @@ class DashboardWidget : GlanceAppWidget() {
             val targetHeatmapWidthPx = ((size.width.value - 40f) * density).toInt().coerceAtLeast(140)
             val targetHeatmapHeightPx = ((size.height.value - 200f) * density).toInt().coerceAtLeast(60)
 
-            val heatmapBitmap: Bitmap = WidgetBitmapUtils.createHeatmapBitmap(
-                columns = weeks,
-                monthPositions = monthPositions,
-                targetWidthPx = targetHeatmapWidthPx,
-                targetHeightPx = targetHeatmapHeightPx,
-                cellColorProvider = { col, row ->
-                    val ratio = ratioMatrix.getOrNull(col)?.getOrNull(row) ?: 0f
-                    WidgetColors.getHeatmapColorInt(ratio)
-                }
-            )
+            val heatmapBitmap: Bitmap = remember(ratioMatrix, targetHeatmapWidthPx, targetHeatmapHeightPx) {
+                WidgetBitmapUtils.createHeatmapBitmap(
+                    columns = weeks,
+                    monthPositions = monthPositions,
+                    targetWidthPx = targetHeatmapWidthPx,
+                    targetHeightPx = targetHeatmapHeightPx,
+                    cellColorProvider = { col, row ->
+                        val ratio = ratioMatrix.getOrNull(col)?.getOrNull(row) ?: 0f
+                        WidgetColors.getHeatmapColorInt(ratio)
+                    }
+                )
+            }
 
             Box(
                 modifier = GlanceModifier
@@ -229,7 +261,7 @@ class DashboardWidget : GlanceAppWidget() {
                                     if (index > 0) {
                                         Spacer(modifier = GlanceModifier.height(2.dp))
                                     }
-                                    HabitDashboardRow(item = item)
+                                    HabitDashboardRow(item = item, todayTabIntent = todayTabIntent)
                                 }
                             }
                         }
@@ -414,38 +446,57 @@ class DashboardWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun HabitDashboardRow(item: HabitWithStats) {
+    private fun HabitDashboardRow(item: HabitWithStats, todayTabIntent: Intent) {
         val isCompleted = item.isCompletedToday
+        val isLocked = !item.isDependencyMet && !isCompleted
+
+        val rowAction = if (isLocked) {
+            actionStartActivity(todayTabIntent)
+        } else {
+            actionRunCallback<ToggleHabitAction>(
+                actionParametersOf(
+                    ToggleHabitAction.habitIdKey to item.habit.id,
+                    ToggleHabitAction.widgetTypeKey to "dashboard"
+                )
+            )
+        }
 
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .padding(vertical = 6.dp)
-                .clickable(
-                    actionRunCallback<ToggleHabitAction>(
-                        actionParametersOf(
-                            ToggleHabitAction.habitIdKey to item.habit.id,
-                            ToggleHabitAction.widgetTypeKey to "dashboard"
-                        )
-                    )
-                ),
+                .clickable(rowAction),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val checkBg = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
-
-            Box(
-                modifier = GlanceModifier
-                    .size(20.dp)
-                    .cornerRadius(10.dp)
-                    .background(ColorProvider(checkBg)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isCompleted) {
+            if (isLocked) {
+                Box(
+                    modifier = GlanceModifier.size(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Image(
-                        provider = ImageProvider(R.drawable.ic_widget_check),
-                        contentDescription = null,
-                        modifier = GlanceModifier.size(12.dp)
+                        provider = ImageProvider(R.drawable.ic_widget_lock),
+                        contentDescription = "Bloqueado",
+                        colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.MutedText)),
+                        modifier = GlanceModifier.size(14.dp)
                     )
+                }
+            } else {
+                val checkBg = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
+
+                Box(
+                    modifier = GlanceModifier
+                        .size(20.dp)
+                        .cornerRadius(10.dp)
+                        .background(ColorProvider(checkBg)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCompleted) {
+                        Image(
+                            provider = ImageProvider(R.drawable.ic_widget_check),
+                            contentDescription = null,
+                            modifier = GlanceModifier.size(12.dp)
+                        )
+                    }
                 }
             }
 
@@ -486,16 +537,16 @@ class DashboardWidget : GlanceAppWidget() {
             }
             Spacer(modifier = GlanceModifier.width(5.dp))
 
-            // Habit Title - TextSecondary when completed, TextPrimary when uncompleted
+            // Habit Title - TextSecondary when completed, MutedText when locked, TextPrimary when uncompleted
             Text(
                 text = item.habit.title,
                 maxLines = 1,
                 style = TextStyle(
                     color = ColorProvider(
-                        if (isCompleted) {
-                            WidgetColors.TextSecondary
-                        } else {
-                            WidgetColors.TextPrimary
+                        when {
+                            isCompleted -> WidgetColors.TextSecondary
+                            isLocked -> WidgetColors.MutedText
+                            else -> WidgetColors.TextPrimary
                         }
                     ),
                     fontSize = 12.sp,

@@ -17,11 +17,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.shareIn
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class WidgetStateSnapshot(
@@ -32,48 +35,27 @@ data class WidgetStateSnapshot(
     val subTasks: List<SubTask> = emptyList()
 )
 
+fun List<HabitWithStats>.forToday(): List<HabitWithStats> =
+    filter { it.isScheduled || it.todayLog != null }
+
 object WidgetRepositoryProvider {
     private const val TAG = "HabitFlowWidget"
 
     @Volatile
     private var repository: HabitRepository? = null
 
-    private data class CachedHabitsStats(
-        val date: String,
-        val timestamp: Long,
-        val data: List<HabitWithStats>
-    )
-
-    @Volatile
-    private var habitsWithStatsCache: CachedHabitsStats? = null
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var observerJob: Job? = null
     private val isObserving = AtomicBoolean(false)
 
-    fun invalidateHabitsCache() {
-        habitsWithStatsCache = null
-    }
+    private val habitsFlows = ConcurrentHashMap<String, SharedFlow<List<HabitWithStats>>>()
 
-    suspend fun getHabitsWithStatsCached(context: Context, today: String): List<HabitWithStats> {
-        val currentCache = habitsWithStatsCache
-        val now = System.currentTimeMillis()
-        if (currentCache != null && currentCache.date == today && (now - currentCache.timestamp) < 500) {
-            return currentCache.data
+    fun habitsWithStatsFlow(context: Context, date: String): Flow<List<HabitWithStats>> =
+        habitsFlows.getOrPut(date) {
+            habitsFlows.keys.filter { it != date }.forEach { habitsFlows.remove(it) }
+            getRepository(context).getHabitsWithStats(date)
+                .shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
         }
-        val repo = getRepository(context)
-        val freshData = try {
-            repo.getHabitsWithStats(today).first()
-        } catch (e: Exception) {
-            emptyList()
-        }
-        habitsWithStatsCache = CachedHabitsStats(
-            date = today,
-            timestamp = System.currentTimeMillis(),
-            data = freshData
-        )
-        return freshData
-    }
 
     fun getRepository(context: Context): HabitRepository {
         return repository ?: synchronized(this) {

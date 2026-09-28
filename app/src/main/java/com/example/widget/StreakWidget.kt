@@ -2,6 +2,8 @@ package com.example.widget
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,10 +33,11 @@ class StreakWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = DateUtils.getTodayDateString()
-        val habitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
-
-        val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
-        val hasActiveStreak = topStreakHabit != null && topStreakHabit.currentStreak > 0
+        val initialHabits = try {
+            WidgetRepositoryProvider.habitsWithStatsFlow(context, today).first()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -42,6 +45,12 @@ class StreakWidget : GlanceAppWidget() {
         }
 
         provideContent {
+            val habitsWithStats by WidgetRepositoryProvider.habitsWithStatsFlow(context, today)
+                .collectAsState(initial = initialHabits)
+
+            val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
+            val hasActiveStreak = topStreakHabit != null && topStreakHabit.currentStreak > 0
+
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()

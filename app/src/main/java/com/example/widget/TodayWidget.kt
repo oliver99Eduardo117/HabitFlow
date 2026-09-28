@@ -3,6 +3,8 @@ package com.example.widget
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,11 +45,18 @@ class TodayWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val today = DateUtils.getTodayDateString()
-        val allHabitsWithStats = WidgetRepositoryProvider.getHabitsWithStatsCached(context, today)
+        val initialHabits = try {
+            WidgetRepositoryProvider.habitsWithStatsFlow(context, today).first()
+        } catch (_: Exception) {
+            emptyList()
+        }
 
         provideContent {
-            val totalHabits = allHabitsWithStats.size
-            val completedCount = allHabitsWithStats.count { it.isCompletedToday }
+            val habitsWithStats by WidgetRepositoryProvider.habitsWithStatsFlow(context, today)
+                .collectAsState(initial = initialHabits)
+            val todayHabits = habitsWithStats.forToday()
+            val totalHabits = todayHabits.size
+            val completedCount = todayHabits.count { it.isCompletedToday }
 
             val mainIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -92,7 +101,7 @@ class TodayWidget : GlanceAppWidget() {
 
                     Spacer(modifier = GlanceModifier.height(6.dp))
 
-                    if (allHabitsWithStats.isEmpty()) {
+                    if (todayHabits.isEmpty()) {
                         Box(
                             modifier = GlanceModifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -109,8 +118,8 @@ class TodayWidget : GlanceAppWidget() {
                         LazyColumn(
                             modifier = GlanceModifier.fillMaxSize()
                         ) {
-                            items(allHabitsWithStats) { item ->
-                                HabitRowItem(item = item)
+                            items(todayHabits) { item ->
+                                HabitRowItem(item = item, todayTabIntent = mainIntent)
                             }
                         }
                     }
@@ -120,39 +129,58 @@ class TodayWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun HabitRowItem(item: HabitWithStats) {
+    private fun HabitRowItem(item: HabitWithStats, todayTabIntent: Intent) {
         val isCompleted = item.isCompletedToday
+        val isLocked = !item.isDependencyMet && !isCompleted
+
+        val rowAction = if (isLocked) {
+            actionStartActivity(todayTabIntent)
+        } else {
+            actionRunCallback<ToggleHabitAction>(
+                actionParametersOf(
+                    ToggleHabitAction.habitIdKey to item.habit.id,
+                    ToggleHabitAction.widgetTypeKey to "today"
+                )
+            )
+        }
 
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .padding(vertical = 6.dp)
-                .clickable(
-                    actionRunCallback<ToggleHabitAction>(
-                        actionParametersOf(
-                            ToggleHabitAction.habitIdKey to item.habit.id,
-                            ToggleHabitAction.widgetTypeKey to "today"
-                        )
-                    )
-                ),
+                .clickable(rowAction),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox circle: 22dp (Emerald solid if completed, SurfaceVariant if not)
-            val checkColor = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
-
-            Box(
-                modifier = GlanceModifier
-                    .size(22.dp)
-                    .cornerRadius(11.dp)
-                    .background(ColorProvider(checkColor)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isCompleted) {
+            if (isLocked) {
+                Box(
+                    modifier = GlanceModifier.size(22.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Image(
-                        provider = ImageProvider(R.drawable.ic_widget_check),
-                        contentDescription = null,
-                        modifier = GlanceModifier.size(13.dp)
+                        provider = ImageProvider(R.drawable.ic_widget_lock),
+                        contentDescription = "Bloqueado",
+                        colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.MutedText)),
+                        modifier = GlanceModifier.size(16.dp)
                     )
+                }
+            } else {
+                // Checkbox circle: 22dp (Emerald solid if completed, SurfaceVariant if not)
+                val checkColor = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
+
+                Box(
+                    modifier = GlanceModifier
+                        .size(22.dp)
+                        .cornerRadius(11.dp)
+                        .background(ColorProvider(checkColor)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCompleted) {
+                        Image(
+                            provider = ImageProvider(R.drawable.ic_widget_check),
+                            contentDescription = null,
+                            modifier = GlanceModifier.size(13.dp)
+                        )
+                    }
                 }
             }
 
@@ -193,23 +221,37 @@ class TodayWidget : GlanceAppWidget() {
             }
             Spacer(modifier = GlanceModifier.width(6.dp))
 
-            // Habit title: 14sp (DarkOnSurfaceVariant for completed, DarkOnSurface for uncompleted)
-            Text(
-                text = item.habit.title,
-                maxLines = 1,
-                style = TextStyle(
-                    color = ColorProvider(
-                        if (isCompleted) {
-                            WidgetColors.TextSecondary
-                        } else {
-                            WidgetColors.TextPrimary
-                        }
-                    ),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal
-                ),
+            // Habit title: 14sp (TextSecondary for completed, MutedText for locked, TextPrimary for uncompleted)
+            Column(
                 modifier = GlanceModifier.defaultWeight()
-            )
+            ) {
+                Text(
+                    text = item.habit.title,
+                    maxLines = 1,
+                    style = TextStyle(
+                        color = ColorProvider(
+                            when {
+                                isCompleted -> WidgetColors.TextSecondary
+                                isLocked -> WidgetColors.MutedText
+                                else -> WidgetColors.TextPrimary
+                            }
+                        ),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                )
+                if (isLocked && !item.blockingHabitTitle.isNullOrBlank()) {
+                    Text(
+                        text = "Primero: ${item.blockingHabitTitle}",
+                        maxLines = 1,
+                        style = TextStyle(
+                            color = ColorProvider(WidgetColors.MutedText),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                }
+            }
 
             // Streak: flame + number in 13sp Amber if streak > 0, or dash "—" in 13sp mutedText if streak = 0
             val effectiveStreak = item.currentStreak
@@ -268,9 +310,6 @@ class ToggleHabitAction : ActionCallback {
             android.util.Log.e("HabitFlowWidget", "toggleHabitCompletion falló (el log pudo persistirse igual)", e)
         }
         val tDb = System.currentTimeMillis() - t0
-
-        // Invalidate cache immediately after write so the touched instance gets fresh data
-        WidgetRepositoryProvider.invalidateHabitsCache()
 
         // 2. Phase 1: Update ONLY the touched widget instance (awaited)
         val tUpdateStart = System.currentTimeMillis()
