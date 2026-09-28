@@ -125,16 +125,28 @@ fun HabitFlowApp(
         uiState.habits.filter { it.isScheduled || it.todayLog != null }
     }
 
-    // Filter habits by category & search query
-    val filteredHabits = remember(dayHabits, uiState.selectedCategory, uiState.searchQuery) {
-        dayHabits.filter { habitStat ->
-            val matchesCategory = uiState.selectedCategory == null || habitStat.habit.category == uiState.selectedCategory
-            val matchesSearch = uiState.searchQuery.isEmpty() ||
-                    habitStat.habit.title.contains(uiState.searchQuery, ignoreCase = true) ||
-                    habitStat.habit.description.contains(uiState.searchQuery, ignoreCase = true)
-            matchesCategory && matchesSearch
-        }
+    // Filtros de categoria y busqueda, comunes a todas las vistas
+    val matchesFilters: (HabitWithStats) -> Boolean = { habitStat ->
+        val matchesCategory = uiState.selectedCategory == null || habitStat.habit.category == uiState.selectedCategory
+        val matchesSearch = uiState.searchQuery.isEmpty() ||
+                habitStat.habit.title.contains(uiState.searchQuery, ignoreCase = true) ||
+                habitStat.habit.description.contains(uiState.searchQuery, ignoreCase = true)
+        matchesCategory && matchesSearch
     }
+
+    // Vistas del dia (Lista, Kanban, Linea de tiempo): solo habitos del dia seleccionado
+    val filteredHabits = remember(dayHabits, uiState.selectedCategory, uiState.searchQuery) {
+        dayHabits.filter(matchesFilters)
+    }
+
+    // Vista de historial (Mapa de calor): todos los habitos activos
+    val historyHabits = remember(uiState.habits, uiState.selectedCategory, uiState.searchQuery) {
+        uiState.habits.filter(matchesFilters)
+    }
+
+    val isHistoryLayout = uiState.layoutMode == ViewLayoutMode.HEATMAP
+    val visibleHabits = if (isHistoryLayout) historyHabits else filteredHabits
+    val chipBaseHabits = if (isHistoryLayout) uiState.habits else dayHabits
 
     val completedTodayCount = dayHabits.count { it.isCompletedToday }
     val totalTodayHabits = dayHabits.size
@@ -410,11 +422,11 @@ fun HabitFlowApp(
                         FilterChip(
                             selected = uiState.selectedCategory == null,
                             onClick = { viewModel.setSelectedCategory(null) },
-                            label = { Text("Todos (${dayHabits.size})") }
+                            label = { Text("Todos (${chipBaseHabits.size})") }
                         )
 
                         uiState.categories.forEach { cat ->
-                            val count = dayHabits.count { it.habit.category == cat.name }
+                            val count = chipBaseHabits.count { it.habit.category == cat.name }
                             val catColor = try {
                                 Color(android.graphics.Color.parseColor(cat.colorHex))
                             } catch (_: Exception) {
@@ -587,7 +599,7 @@ fun HabitFlowApp(
                                     },
                                     onPickTemplate = { showTemplatePicker = true }
                                 )
-                            } else if (filteredHabits.isEmpty()) {
+                            } else if (visibleHabits.isEmpty()) {
                                 val hasFilter = uiState.selectedCategory != null || uiState.searchQuery.isNotEmpty()
                                 NoHabitsForDayState(
                                     hasActiveFilter = hasFilter,
@@ -627,7 +639,7 @@ fun HabitFlowApp(
 
                                     ViewLayoutMode.HEATMAP -> {
                                         HabitsHeatmapLayout(
-                                            habits = filteredHabits,
+                                            habits = historyHabits,
                                             allLogs = uiState.allLogs,
                                             onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
                                             onOpenProgressDialog = { quantitativeHabitTarget = it },
