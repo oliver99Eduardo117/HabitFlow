@@ -377,9 +377,18 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) {
         viewModelScope.launch {
+            val habitId = _uiState.value.habits
+                .firstOrNull { hs -> hs.subTasks.any { it.id == subTaskId } }
+                ?.habit?.id
             val gainedXp = repository.toggleSubTask(subTaskId, isCompleted, _uiState.value.selectedDate)
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
+                // Si la sub-rutina completo el habito, puede alcanzarse un hito de racha
+                val milestone = habitId?.let { repository.checkStreakMilestone(it) }
+                if (milestone != null) {
+                    _streakMilestoneEvent.tryEmit(milestone)
+                    _xpGainedEvent.tryEmit(milestone.xpBonus)
+                }
             }
         }
     }

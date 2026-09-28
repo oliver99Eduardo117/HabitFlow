@@ -32,9 +32,10 @@ import kotlinx.coroutines.launch
         HabitLog::class,
         SubTask::class,
         Category::class,
-        UserStats::class
+        UserStats::class,
+        SubTaskLog::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -44,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun subTaskDao(): SubTaskDao
     abstract fun categoryDao(): CategoryDao
     abstract fun userStatsDao(): UserStatsDao
+    abstract fun subTaskLogDao(): SubTaskLogDao
 
     companion object {
         @Volatile
@@ -55,6 +57,44 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sub_task_logs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subTaskId` INTEGER NOT NULL, `habitId` INTEGER NOT NULL, `date` TEXT NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sub_task_logs_subTaskId_date` ON `sub_task_logs` (`subTaskId`, `date`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sub_task_logs_habitId_date` ON `sub_task_logs` (`habitId`, `date`)")
+
+                // 1. Estado heredado de sub_tasks (ese XP ya se otorgo en su momento)
+                db.execSQL("INSERT OR IGNORE INTO sub_task_logs (subTaskId, habitId, date) SELECT id, habitId, date FROM sub_tasks WHERE isCompleted = 1 AND date != ''")
+                val before = countSubTaskLogs(db)
+
+                // 2. Dias en que un habito sin unidad quedo completado: todas sus sub-rutinas cuentan como hechas
+                db.execSQL(
+                    "INSERT OR IGNORE INTO sub_task_logs (subTaskId, habitId, date) " +
+                        "SELECT st.id, st.habitId, hl.date FROM sub_tasks st " +
+                        "JOIN habits h ON h.id = st.habitId " +
+                        "JOIN habit_logs hl ON hl.habitId = st.habitId " +
+                        "WHERE h.unit = '' AND hl.value >= h.targetValue"
+                )
+                val added = countSubTaskLogs(db) - before
+
+                // 3. Acreditar el XP de las filas agregadas en el paso 2, para que el XP siga siendo funcion del estado
+                if (added > 0) {
+                    db.query("SELECT xp FROM user_stats WHERE id = 1").use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val newXp = cursor.getInt(0) + added * GamificationConfig.XP_SUBTASK_COMPLETION
+                            db.execSQL(
+                                "UPDATE user_stats SET xp = ?, level = ? WHERE id = 1",
+                                arrayOf<Any>(newXp, GamificationConfig.calculateLevel(newXp))
+                            )
+                        }
+                    }
+                }
+            }
+
+            private fun countSubTaskLogs(db: SupportSQLiteDatabase): Int =
+                db.query("SELECT COUNT(*) FROM sub_task_logs").use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -62,7 +102,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "habitflow_database.db"
                 )
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {

@@ -30,6 +30,7 @@ class HabitRepository(
     private val habitDao = database.habitDao()
     private val habitLogDao = database.habitLogDao()
     private val subTaskDao = database.subTaskDao()
+    private val subTaskLogDao = database.subTaskLogDao()
     private val categoryDao = database.categoryDao()
     private val userStatsDao = database.userStatsDao()
 
@@ -60,8 +61,10 @@ class HabitRepository(
         return combine(
             habitDao.getActiveHabits(),
             habitLogDao.getAllLogs(),
-            subTaskDao.getAllSubTasks()
-        ) { habits, logs, allSubTasks ->
+            subTaskDao.getAllSubTasks(),
+            subTaskLogDao.getLogsForDate(selectedDate)
+        ) { habits, logs, allSubTasks, subTaskLogsForDate ->
+            val doneSubTaskIds = subTaskLogsForDate.map { it.subTaskId }.toSet()
             val logsByHabit = logs.groupBy { it.habitId }
             val logsByHabitAndDate = logs.associateBy { "${it.habitId}_${it.date}" }
             val subTasksByHabit = allSubTasks.groupBy { it.habitId }
@@ -90,7 +93,7 @@ class HabitRepository(
                     bestStreak = bestStreak,
                     totalCompletions = completedDates.size,
                     subTasks = (subTasksByHabit[habit.id] ?: emptyList()).map { st ->
-                        st.copy(isCompleted = st.isCompleted && st.date == selectedDate)
+                        st.copy(isCompleted = st.id in doneSubTaskIds)
                     },
                     isDependencyMet = isDependencyMet,
                     isScheduled = habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays
@@ -116,12 +119,17 @@ class HabitRepository(
         } else {
             // Edicion: sincronizar conservando el estado de las que no cambiaron
             val existing = subTaskDao.getSubTasksForHabitOnce(habitId)
-            existing.filter { it.title !in wantedTitles }.forEach { subTaskDao.deleteSubTask(it.id) }
+            existing.filter { it.title !in wantedTitles }.forEach {
+                subTaskDao.deleteSubTask(it.id)
+                subTaskLogDao.deleteForSubTask(it.id)
+            }
             val existingTitles = existing.map { it.title }.toSet()
             val toInsert = wantedTitles.filter { it !in existingTitles }
             if (toInsert.isNotEmpty()) {
                 subTaskDao.insertSubTasks(toInsert.map { SubTask(habitId = habitId, title = it) })
             }
+            // Vinculo: agregar o quitar sub-rutinas puede cambiar si el habito queda hecho hoy
+            reconcileHabitWithSubTasks(habit.copy(id = habitId), DateUtils.getTodayDateString())
         }
 
         if (habit.reminderTime != null) {
@@ -151,6 +159,7 @@ class HabitRepository(
         NotificationHelper.cancelHabitReminder(context, habitId)
         habitDao.deleteHabitById(habitId)
         subTaskDao.deleteSubTasksForHabit(habitId)
+        subTaskLogDao.deleteForHabit(habitId)
         WidgetUpdater.scheduleRefresh(context)
     }
 
@@ -172,7 +181,11 @@ class HabitRepository(
             habitLogDao.insertOrUpdateLog(log)
         }
 
-        val earnedXp = applyCompletionChange(habit, existingLog?.value, newValue)
+        // Vinculo: en habitos sin unidad (por ejemplo, con temporizador), cruzar la meta marca o desmarca todas las sub-rutinas
+        val wasDone = existingLog != null && existingLog.value >= habit.targetValue
+        val nowDone = newValue != null && newValue >= habit.targetValue
+        val subTaskXp = if (habit.unit.isEmpty() && wasDone != nowDone) setAllSubTasksForDate(habitId, date, nowDone) else 0
+        val earnedXp = subTaskXp + applyCompletionChange(habit, existingLog?.value, newValue)
         if (newValue != null && newValue >= habit.targetValue && date == DateUtils.getTodayDateString()) {
             NotificationHelper.dismissActiveReminder(context, habitId)
         }
@@ -212,37 +225,90 @@ class HabitRepository(
             habit.targetValue
         }
 
-        applyCompletionChange(habit, existingLog?.value, newValue)
+        // Vinculo: en habitos sin unidad, completar marca todas las sub-rutinas del dia y desmarcar las limpia
+        val subTaskXp = if (habit.unit.isEmpty()) setAllSubTasksForDate(habitId, date, !isDone) else 0
+        subTaskXp + applyCompletionChange(habit, existingLog?.value, newValue)
     }
 
+    /**
+     * Marca o desmarca una sub-rutina en una fecha y aplica el vinculo con su habito.
+     * Devuelve el XP ganado (sub-rutina y, si aplica, habito completado).
+     */
     suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean, date: String): Int = withContext(Dispatchers.IO) {
         val subTask = subTaskDao.getSubTaskById(subTaskId) ?: return@withContext 0
-        val wasCompletedForDate = subTask.isCompleted && subTask.date == date
-        if (isCompleted == wasCompletedForDate) return@withContext 0
-        subTaskDao.setSubTaskCompletedForDate(subTaskId, isCompleted, date)
+        val habit = habitDao.getHabitById(subTask.habitId) ?: return@withContext 0
+        var earnedXp = 0
         if (isCompleted) {
-            awardXpForSubTask()
+            val inserted = subTaskLogDao.insert(SubTaskLog(subTaskId = subTaskId, habitId = habit.id, date = date)) != -1L
+            if (!inserted) return@withContext 0
+            earnedXp += adjustSubTaskXp(1)
         } else {
-            deductXpForSubTask()
-            0
+            val removed = subTaskLogDao.delete(subTaskId, date)
+            if (removed == 0) return@withContext 0
+            adjustSubTaskXp(-removed)
         }
+        earnedXp + reconcileHabitWithSubTasks(habit, date)
     }
 
-    private suspend fun awardXpForSubTask(): Int {
-        val currentStats = userStatsDao.getUserStats() ?: UserStats()
-        val bonus = if (currentStats.isHardcoreMode) (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else GamificationConfig.XP_SUBTASK_COMPLETION
-        val newXp = currentStats.xp + bonus
-        val newLevel = GamificationConfig.calculateLevel(newXp)
-        checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
-        return bonus
+    /** Suma o resta el XP de sub-rutinas marcadas o desmarcadas. Devuelve el XP ganado. */
+    private suspend fun adjustSubTaskXp(rowDelta: Int): Int {
+        if (rowDelta == 0) return 0
+        val stats = userStatsDao.getUserStats() ?: UserStats()
+        val perRow = if (stats.isHardcoreMode) {
+            (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt()
+        } else {
+            GamificationConfig.XP_SUBTASK_COMPLETION
+        }
+        val delta = perRow * rowDelta
+        val newXp = maxOf(0, stats.xp + delta)
+        val updated = stats.copy(xp = newXp, level = GamificationConfig.calculateLevel(newXp))
+        if (delta > 0) checkAndSaveGamification(updated) else userStatsDao.insertOrUpdate(updated)
+        return maxOf(0, delta)
     }
 
-    private suspend fun deductXpForSubTask() {
-        val currentStats = userStatsDao.getUserStats() ?: UserStats()
-        val penalty = if (currentStats.isHardcoreMode) (GamificationConfig.XP_SUBTASK_COMPLETION * GamificationConfig.HARDCORE_XP_MULTIPLIER).toInt() else GamificationConfig.XP_SUBTASK_COMPLETION
-        val newXp = maxOf(0, currentStats.xp - penalty)
-        val newLevel = GamificationConfig.calculateLevel(newXp)
-        checkAndSaveGamification(currentStats.copy(xp = newXp, level = newLevel))
+    /** Marca (done = true) o desmarca todas las sub-rutinas del habito en la fecha. Devuelve el XP ganado. */
+    private suspend fun setAllSubTasksForDate(habitId: Long, date: String, done: Boolean): Int {
+        val subTasks = subTaskDao.getSubTasksForHabitOnce(habitId)
+        if (subTasks.isEmpty()) return 0
+        var rowDelta = 0
+        subTasks.forEach { st ->
+            if (done) {
+                if (subTaskLogDao.insert(SubTaskLog(subTaskId = st.id, habitId = habitId, date = date)) != -1L) rowDelta++
+            } else {
+                rowDelta -= subTaskLogDao.delete(st.id, date)
+            }
+        }
+        return adjustSubTaskXp(rowDelta)
+    }
+
+    /**
+     * Vinculo habito / sub-rutinas (solo habitos sin unidad y con al menos una sub-rutina):
+     * deja el registro del habito como hecho si todas las sub-rutinas estan marcadas en la fecha,
+     * y lo quita si falta alguna. Devuelve el XP ganado.
+     */
+    private suspend fun reconcileHabitWithSubTasks(habit: Habit, date: String): Int {
+        if (habit.unit.isNotEmpty()) return 0
+        val subTasks = subTaskDao.getSubTasksForHabitOnce(habit.id)
+        if (subTasks.isEmpty()) return 0
+        val doneIds = subTaskLogDao.getLogsForHabitAndDate(habit.id, date).map { it.subTaskId }.toSet()
+        val allDone = subTasks.all { it.id in doneIds }
+        val existingLog = habitLogDao.getLogForHabitAndDate(habit.id, date)
+        val isDone = existingLog != null && existingLog.value >= habit.targetValue
+        if (allDone == isDone) return 0
+
+        val newValue: Float? = if (allDone) {
+            val log = existingLog?.copy(value = habit.targetValue, timestamp = System.currentTimeMillis())
+                ?: HabitLog(habitId = habit.id, date = date, value = habit.targetValue, timestamp = System.currentTimeMillis())
+            habitLogDao.insertOrUpdateLog(log)
+            if (date == DateUtils.getTodayDateString()) {
+                NotificationHelper.dismissActiveReminder(context, habit.id)
+            }
+            habit.targetValue
+        } else {
+            habitLogDao.deleteLog(habit.id, date)
+            null
+        }
+        return applyCompletionChange(habit, existingLog?.value, newValue)
     }
 
     suspend fun addSubTask(habitId: Long, title: String) = withContext(Dispatchers.IO) {
@@ -606,6 +672,17 @@ class HabitRepository(
         }
         root.put("subTasks", subTasksArray)
 
+        // 3b. Estado diario de sub-rutinas
+        val subTaskLogsArray = JSONArray()
+        subTaskLogDao.getAllOnce().forEach { l ->
+            subTaskLogsArray.put(JSONObject().apply {
+                put("subTaskId", l.subTaskId)
+                put("habitId", l.habitId)
+                put("date", l.date)
+            })
+        }
+        root.put("subTaskLogs", subTaskLogsArray)
+
         // 4. Habit Logs
         val logsArray = JSONArray()
         logs.forEach { l ->
@@ -765,6 +842,34 @@ class HabitRepository(
                 )
             }
 
+            // Parse Sub-task Logs. Los respaldos anteriores no lo traen: se reconstruye
+            // desde el estado heredado de sub_tasks y desde los dias completados.
+            val subTaskLogsArray = root.optJSONArray("subTaskLogs")
+            val restoredSubTaskLogs: List<SubTaskLog> = if (subTaskLogsArray != null) {
+                (0 until subTaskLogsArray.length()).map { i ->
+                    val obj = subTaskLogsArray.getJSONObject(i)
+                    SubTaskLog(
+                        subTaskId = obj.getLong("subTaskId"),
+                        habitId = obj.getLong("habitId"),
+                        date = obj.getString("date")
+                    )
+                }
+            } else {
+                val legacy = restoredSubTasks.filter { it.isCompleted && it.date.isNotEmpty() }
+                    .map { SubTaskLog(subTaskId = it.id, habitId = it.habitId, date = it.date) }
+                val habitsById = restoredHabits.associateBy { it.id }
+                val subTasksByHabit = restoredSubTasks.groupBy { it.habitId }
+                val fromCompletedDays = restoredLogs.flatMap { log ->
+                    val h = habitsById[log.habitId]
+                    if (h != null && h.unit.isEmpty() && log.value >= h.targetValue) {
+                        subTasksByHabit[h.id].orEmpty().map { SubTaskLog(subTaskId = it.id, habitId = h.id, date = log.date) }
+                    } else {
+                        emptyList()
+                    }
+                }
+                (legacy + fromCompletedDays).distinctBy { it.subTaskId to it.date }
+            }
+
             // Parse User Stats
             val restoredStats = if (statsObj != null) {
                 val badgesJson = statsObj.optJSONArray("unlockedBadgeIds")
@@ -792,6 +897,7 @@ class HabitRepository(
                 kotlinx.coroutines.runBlocking {
                     // 1. Clear existing data
                     subTaskDao.deleteAllSubTasks()
+                    subTaskLogDao.deleteAll()
                     habitLogDao.deleteAllLogs()
                     habitDao.deleteAllHabits()
                     if (restoredCategories.isNotEmpty()) {
@@ -811,6 +917,10 @@ class HabitRepository(
 
                     if (restoredSubTasks.isNotEmpty()) {
                         subTaskDao.insertSubTasks(restoredSubTasks)
+                    }
+
+                    if (restoredSubTaskLogs.isNotEmpty()) {
+                        subTaskLogDao.insertAll(restoredSubTaskLogs)
                     }
 
                     if (restoredLogs.isNotEmpty()) {
