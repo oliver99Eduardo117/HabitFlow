@@ -351,14 +351,16 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             val gainedXp = repository.toggleHabitCompletion(habitId, date)
             WidgetUpdater.scheduleRefresh(getApplication())
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
-            val message = if (gainedXp > 0) "¡Hábito completado! +$gainedXp XP" else "Hábito desmarcado"
-            _uiState.update { it.copy(snackbarMessage = message) }
-            if (gainedXp > 0) {
-                _xpGainedEvent.tryEmit(gainedXp)
+            // El XP ganado lo anuncia el snackbar de XP; aqui solo se avisa el desmarcado
+            if (gainedXp == 0) {
+                _uiState.update { it.copy(snackbarMessage = "Hábito desmarcado") }
             }
             if (milestone != null) {
                 _streakMilestoneEvent.tryEmit(milestone)
-                _xpGainedEvent.tryEmit(milestone.xpBonus)
+            }
+            val totalXp = gainedXp + (milestone?.xpBonus ?: 0)
+            if (totalXp > 0) {
+                _xpGainedEvent.tryEmit(totalXp)
             }
             triggerHaptic()
         }
@@ -376,14 +378,15 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             }
             val gainedXp = repository.recordHabitProgress(habitId, date, value, notes)
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
-            val bonusText = if (gainedXp > 0) " +$gainedXp XP" else ""
-            _uiState.update { it.copy(snackbarMessage = "Progreso registrado$bonusText") }
-            if (gainedXp > 0) {
-                _xpGainedEvent.tryEmit(gainedXp)
+            if (gainedXp == 0) {
+                _uiState.update { it.copy(snackbarMessage = "Progreso registrado") }
             }
             if (milestone != null) {
                 _streakMilestoneEvent.tryEmit(milestone)
-                _xpGainedEvent.tryEmit(milestone.xpBonus)
+            }
+            val totalXp = gainedXp + (milestone?.xpBonus ?: 0)
+            if (totalXp > 0) {
+                _xpGainedEvent.tryEmit(totalXp)
             }
             triggerHaptic()
         }
@@ -402,13 +405,12 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             }
             val gainedXp = repository.toggleSubTask(subTaskId, isCompleted, _uiState.value.selectedDate)
             if (gainedXp > 0) {
-                _xpGainedEvent.tryEmit(gainedXp)
                 // Si la sub-rutina completo el habito, puede alcanzarse un hito de racha
                 val milestone = habitId?.let { repository.checkStreakMilestone(it) }
                 if (milestone != null) {
                     _streakMilestoneEvent.tryEmit(milestone)
-                    _xpGainedEvent.tryEmit(milestone.xpBonus)
                 }
+                _xpGainedEvent.tryEmit(gainedXp + (milestone?.xpBonus ?: 0))
             }
         }
     }
@@ -605,7 +607,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         val loggedMinutes = maxOf(1, (if (current.isPomodoro) (current.totalSeconds - current.remainingSeconds) else current.elapsedSeconds) / 60)
         TimerManager.stopAndSave(getApplication(), loggedMinutes)
         _uiState.update {
-            it.copy(snackbarMessage = "¡Sesión de $loggedMinutes min guardada! +${loggedMinutes * 2} XP")
+            it.copy(snackbarMessage = "Sesión de $loggedMinutes min guardada")
         }
         triggerHaptic()
     }

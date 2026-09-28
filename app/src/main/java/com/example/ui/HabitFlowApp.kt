@@ -89,17 +89,22 @@ fun HabitFlowApp(
     var showLayoutDropdown by remember { mutableStateOf(false) }
     var activeStreakMilestone by remember { mutableStateOf<com.example.model.StreakMilestoneEvent?>(null) }
 
-    // Transient XP Gain Notification Banner (shows temporarily ONLY when XP is actively earned)
-    var recentGainedXp by remember { mutableStateOf(0) }
-    var showXpNotificationBanner by remember { mutableStateOf(false) }
+    // XP ganado: un solo snackbar que acumula las ganancias mientras sigue visible
+    var xpBurstTotal by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         viewModel.xpGainedEvent.collect { gained ->
-            if (gained > 0) {
-                recentGainedXp = gained
-                showXpNotificationBanner = true
-                kotlinx.coroutines.delay(3500)
-                showXpNotificationBanner = false
+            if (gained <= 0) return@collect
+            val current = snackbarHostState.currentSnackbarData
+            xpBurstTotal = if (current?.visuals is XpSnackbarVisuals) xpBurstTotal + gained else gained
+            current?.dismiss()
+            val total = xpBurstTotal
+            coroutineScope.launch {
+                val result = snackbarHostState.showSnackbar(XpSnackbarVisuals(gainedXp = total))
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.setProgressTab(ProgressTab.ACHIEVEMENTS)
+                    viewModel.setNavigationTab(NavigationTab.PROGRESS)
+                }
             }
         }
     }
@@ -159,7 +164,22 @@ fun HabitFlowApp(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                val visuals = data.visuals
+                if (visuals is XpSnackbarVisuals) {
+                    GamificationXpToastBanner(
+                        userStats = uiState.userStats,
+                        gainedXp = visuals.gainedXp,
+                        onOpenGamification = { data.performAction() },
+                        onDismiss = { data.dismiss() },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                } else {
+                    Snackbar(data)
+                }
+            }
+        },
         topBar = {
             Column(
                 modifier = Modifier
@@ -566,30 +586,6 @@ fun HabitFlowApp(
             when (uiState.activeTab) {
                 NavigationTab.TODAY -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Floating Animated XP Gain Banner (only appears when gaining XP)
-                        AnimatedVisibility(
-                            visible = showXpNotificationBanner,
-                            enter = fadeIn(androidx.compose.animation.core.tween(250)) + expandVertically(androidx.compose.animation.core.tween(300)) + slideInVertically(androidx.compose.animation.core.tween(300)),
-                            exit = fadeOut(androidx.compose.animation.core.tween(250)) + shrinkVertically(androidx.compose.animation.core.tween(300)) + slideOutVertically(androidx.compose.animation.core.tween(300))
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
-                            ) {
-                                GamificationXpToastBanner(
-                                    userStats = uiState.userStats,
-                                    gainedXp = recentGainedXp,
-                                    onOpenGamification = {
-                                        showXpNotificationBanner = false
-                                        viewModel.setProgressTab(ProgressTab.ACHIEVEMENTS)
-                                        viewModel.setNavigationTab(NavigationTab.PROGRESS)
-                                    },
-                                    onDismiss = { showXpNotificationBanner = false }
-                                )
-                            }
-                        }
-
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             if (uiState.habits.isEmpty()) {
                                 EmptyHabitsState(
@@ -1263,4 +1259,13 @@ fun GamificationXpToastBanner(
         }
     }
 }
+
+/** Snackbar de XP ganado: el SnackbarHost lo dibuja con GamificationXpToastBanner. */
+private data class XpSnackbarVisuals(
+    val gainedXp: Int,
+    override val message: String = "+$gainedXp XP",
+    override val actionLabel: String? = "Ver logros",
+    override val withDismissAction: Boolean = false,
+    override val duration: SnackbarDuration = SnackbarDuration.Short
+) : SnackbarVisuals
 
