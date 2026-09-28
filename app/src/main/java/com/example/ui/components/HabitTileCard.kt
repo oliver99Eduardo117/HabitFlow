@@ -330,6 +330,27 @@ fun HabitTileCard(
                 }
             }
 
+            // Requisito previo pendiente
+            if (!habitWithStats.isDependencyMet && habitWithStats.blockingHabitTitle != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Primero completa: ${habitWithStats.blockingHabitTitle}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
             // Description
             if (habit.description.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
@@ -429,13 +450,16 @@ fun HabitTileCard(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onToggleSubTask(subTask, !subTask.isCompleted) }
+                                    .clickable(enabled = habitWithStats.isDependencyMet || subTask.isCompleted) {
+                                        onToggleSubTask(subTask, !subTask.isCompleted)
+                                    }
                                     .padding(vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = subTask.isCompleted,
                                     onCheckedChange = { onToggleSubTask(subTask, it) },
+                                    enabled = habitWithStats.isDependencyMet || subTask.isCompleted,
                                     colors = CheckboxDefaults.colors(checkedColor = habitColor),
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -464,6 +488,7 @@ fun HabitTileCard(
                 if (habit.unit.isNotEmpty()) {
                     OutlinedButton(
                         onClick = onOpenProgressDialog,
+                        enabled = habitWithStats.isDependencyMet || currentVal > 0f,
                         modifier = Modifier
                             .weight(1f)
                             .height(40.dp)
@@ -487,6 +512,7 @@ fun HabitTileCard(
                 // Dedicated Pomodoro / Timer Button
                 FilledTonalButton(
                     onClick = onStartTimer,
+                    enabled = habitWithStats.isDependencyMet,
                     modifier = Modifier
                         .height(40.dp)
                         .testTag("timer_btn_${habit.id}"),
@@ -517,7 +543,7 @@ fun HabitTileCard(
                     // En habitos cuantitativos ya completados, tocar "Hecho" abre el registro
                     // para ajustar el valor en lugar de borrar el progreso de un toque
                     onClick = if (habit.unit.isNotEmpty() && isCompleted) onOpenProgressDialog else onToggleCompletion,
-                    enabled = habitWithStats.isDependencyMet,
+                    enabled = habitWithStats.isDependencyMet || isCompleted,
                     modifier = Modifier
                         .weight(if (habit.unit.isEmpty()) 1f else 0.8f)
                         .height(40.dp)

@@ -773,7 +773,7 @@ fun HabitFlowApp(
             initialHabit = editingHabit,
             initialSubTasks = readySubTasks,
             categories = uiState.categories,
-            allHabits = uiState.habits.map { it.habit },
+            allHabits = uiState.habits.map { it.habit } + uiState.archivedHabits,
             onDismiss = { showAddEditDialog = false },
             onSaveHabit = { habit, subTasks ->
                 viewModel.saveHabit(habit, subTasks)

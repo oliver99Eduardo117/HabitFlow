@@ -45,5 +45,6 @@ data class HabitWithStats(
     val totalCompletions: Int = 0,
     val subTasks: List<SubTask> = emptyList(),
     val isDependencyMet: Boolean = true,
-    val isScheduled: Boolean = true
+    val isScheduled: Boolean = true,
+    val blockingHabitTitle: String? = null
 )

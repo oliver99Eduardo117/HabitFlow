@@ -955,6 +955,157 @@ fun AddEditHabitDialog(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Requisito previo: otro habito que debe completarse el mismo dia
+                    val currentHabitId = initialHabit?.id ?: 0L
+                    val dependentIds = remember(allHabits, currentHabitId) {
+                        // Habitos que ya dependen (directa o indirectamente) de este: elegirlos crearia un ciclo
+                        if (currentHabitId == 0L) {
+                            emptySet()
+                        } else {
+                            val result = mutableSetOf<Long>()
+                            var frontier = setOf(currentHabitId)
+                            while (frontier.isNotEmpty()) {
+                                val next = allHabits
+                                    .filter { h -> h.id != currentHabitId && h.id !in result && h.dependencyHabitId?.let { it in frontier } == true }
+                                    .map { it.id }
+                                    .toSet()
+                                result += next
+                                frontier = next
+                            }
+                            result
+                        }
+                    }
+                    val dependencyOptions = remember(allHabits, currentHabitId) {
+                        allHabits.filter { !it.isArchived && it.id != currentHabitId }
+                    }
+                    val selectedDependency = allHabits.firstOrNull { it.id == selectedDependencyId }
+                    var dependencyMenuExpanded by remember { mutableStateOf(false) }
+
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Requisito previo",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Este hábito se desbloquea cuando completas otro el mismo día.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            ExposedDropdownMenuBox(
+                                expanded = dependencyMenuExpanded,
+                                onExpandedChange = { dependencyMenuExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedDependency?.title ?: "Sin requisito",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    singleLine = true,
+                                    label = { Text("Hábito requerido") },
+                                    leadingIcon = if (selectedDependency != null) {
+                                        { DependencyAvatar(selectedDependency) }
+                                    } else null,
+                                    trailingIcon = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (selectedDependency != null) {
+                                                IconButton(onClick = { selectedDependencyId = null }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Quitar requisito")
+                                                }
+                                            }
+                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dependencyMenuExpanded)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .fillMaxWidth()
+                                )
+
+                                ExposedDropdownMenu(
+                                    expanded = dependencyMenuExpanded,
+                                    onDismissRequest = { dependencyMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Sin requisito") },
+                                        leadingIcon = { Icon(Icons.Default.Block, contentDescription = null) },
+                                        trailingIcon = if (selectedDependencyId == null) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                                        } else null,
+                                        onClick = {
+                                            selectedDependencyId = null
+                                            dependencyMenuExpanded = false
+                                        }
+                                    )
+                                    dependencyOptions.forEach { option ->
+                                        val createsCycle = option.id in dependentIds
+                                        DropdownMenuItem(
+                                            enabled = !createsCycle,
+                                            text = {
+                                                Column {
+                                                    Text(option.title)
+                                                    Text(
+                                                        text = if (createsCycle) "No disponible: ya depende de este hábito" else dependencyRequirementLabel(option),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            },
+                                            leadingIcon = { DependencyAvatar(option) },
+                                            trailingIcon = if (option.id == selectedDependencyId) {
+                                                { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                                            } else null,
+                                            onClick = {
+                                                selectedDependencyId = option.id
+                                                dependencyMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (selectedDependency != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Se desbloquea al completar ${selectedDependency.title} ese día. Si ese hábito no toca ese día, este queda libre.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
@@ -1011,7 +1162,7 @@ fun AddEditHabitDialog(
                                 reminderTime = reminder,
                                 reminderMinutesAdvance = if (hasReminder) reminderMinutesAdvance else 0,
                                 reminderCustomMessage = if (hasReminder && reminderCustomMessage.isNotBlank()) reminderCustomMessage.trim() else null,
-                                dependencyHabitId = selectedDependencyId
+                                dependencyHabitId = selectedDependencyId?.takeIf { id -> allHabits.any { it.id == id } }
                             )
                             onSaveHabit(habitToSave, subTasks.toList())
                             onDismiss()
@@ -1022,5 +1173,45 @@ fun AddEditHabitDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DependencyAvatar(habit: Habit) {
+    val color = try {
+        Color(android.graphics.Color.parseColor(habit.colorHex))
+    } catch (_: Exception) {
+        MaterialTheme.colorScheme.primary
+    }
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = IconHelper.getIconByName(habit.iconName),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+/** Texto de lo que exige el habito requisito: su meta y, si aplica, sus dias. */
+private fun dependencyRequirementLabel(habit: Habit): String {
+    val base = if (habit.unit.isNotEmpty()) {
+        val target = if (habit.targetValue % 1f == 0f) habit.targetValue.toInt().toString() else habit.targetValue.toString()
+        "Llegar a la meta: $target ${habit.unit}"
+    } else {
+        "Marcarlo como hecho"
+    }
+    val days = habit.frequencyDays
+    return if (days.isNotEmpty() && days.size < 7) {
+        val letters = listOf("L", "M", "X", "J", "V", "S", "D")
+        "$base · Solo ${days.sorted().joinToString(", ") { letters[(it - 1).coerceIn(0, 6)] }}"
+    } else {
+        base
     }
 }

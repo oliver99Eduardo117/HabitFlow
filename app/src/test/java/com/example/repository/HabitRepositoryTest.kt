@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -270,5 +271,37 @@ class HabitRepositoryTest {
 
         val finalStats = database.userStatsDao().getUserStats()
         assertEquals(xpAfterFirstClaim + 50, finalStats?.xp)
+    }
+
+    @Test
+    fun `dependency requires reaching the prerequisite goal and blocks progress until then`() = runTest {
+        val today = DateUtils.getTodayDateString()
+        val prereq = repository.saveHabit(Habit(title = "Entrenar", unit = "min", targetValue = 45f))
+        val dependent = repository.saveHabit(Habit(title = "Estirar", dependencyHabitId = prereq))
+
+        repository.recordHabitProgress(prereq, today, 20f)
+        var item = repository.getHabitsWithStats(today).first().first { it.habit.id == dependent }
+        assertFalse("El progreso parcial no cumple el requisito", item.isDependencyMet)
+        assertEquals("Entrenar", item.blockingHabitTitle)
+
+        assertEquals(0, repository.toggleHabitCompletion(dependent, today))
+        assertNull(database.habitLogDao().getLogForHabitAndDate(dependent, today))
+
+        repository.recordHabitProgress(prereq, today, 45f)
+        item = repository.getHabitsWithStats(today).first().first { it.habit.id == dependent }
+        assertTrue(item.isDependencyMet)
+        assertEquals(25, repository.toggleHabitCompletion(dependent, today))
+    }
+
+    @Test
+    fun `dependency is free on days the prerequisite is not scheduled`() = runTest {
+        val today = DateUtils.getTodayDateString()
+        val todayDow = DateUtils.getDayOfWeek(today)
+        val prereq = repository.saveHabit(Habit(title = "Gimnasio", frequencyDays = (1..7).filter { it != todayDow }))
+        val dependent = repository.saveHabit(Habit(title = "Proteina", dependencyHabitId = prereq))
+
+        val item = repository.getHabitsWithStats(today).first().first { it.habit.id == dependent }
+        assertTrue(item.isDependencyMet)
+        assertEquals(25, repository.toggleHabitCompletion(dependent, today))
     }
 }

@@ -23,6 +23,18 @@ private val EMOJI_REGEX = Regex(
 private fun String.stripEmojis(): String =
     replace(EMOJI_REGEX, "").replace(Regex("\\s{2,}"), " ").trim()
 
+/**
+ * Regla del requisito previo. Se cumple si el requisito no existe o esta archivado,
+ * si no esta programado ese dia, o si su registro de ese dia alcanza su meta.
+ */
+internal fun isDependencySatisfied(dependency: Habit?, dependencyLog: HabitLog?, date: String): Boolean {
+    if (dependency == null || dependency.isArchived) return true
+    val dayOfWeek = DateUtils.getDayOfWeek(date)
+    val scheduled = dependency.frequencyDays.isEmpty() || dayOfWeek in dependency.frequencyDays
+    if (!scheduled) return true
+    return dependencyLog != null && dependencyLog.value >= dependency.targetValue
+}
+
 class HabitRepository(
     private val database: AppDatabase,
     private val context: Context
@@ -65,6 +77,7 @@ class HabitRepository(
             subTaskLogDao.getLogsForDate(selectedDate)
         ) { habits, logs, allSubTasks, subTaskLogsForDate ->
             val doneSubTaskIds = subTaskLogsForDate.map { it.subTaskId }.toSet()
+            val habitsById = habits.associateBy { it.id }
             val logsByHabit = logs.groupBy { it.habitId }
             val logsByHabitAndDate = logs.associateBy { "${it.habitId}_${it.date}" }
             val subTasksByHabit = allSubTasks.groupBy { it.habitId }
@@ -77,13 +90,13 @@ class HabitRepository(
                 val completedDates = habitLogs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
                 val (currentStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
 
-                // Check dependency
-                val isDependencyMet = if (habit.dependencyHabitId != null) {
-                    val depLog = logsByHabitAndDate["${habit.dependencyHabitId}_$selectedDate"]
-                    depLog != null && depLog.value > 0f
-                } else {
-                    true
-                }
+                // Requisito previo (misma regla que aplican las escrituras)
+                val dependency = habit.dependencyHabitId?.let { habitsById[it] }
+                val isDependencyMet = habit.dependencyHabitId == null || isDependencySatisfied(
+                    dependency,
+                    dependency?.let { logsByHabitAndDate["${it.id}_$selectedDate"] },
+                    selectedDate
+                )
 
                 HabitWithStats(
                     habit = habit,
@@ -96,10 +109,25 @@ class HabitRepository(
                         st.copy(isCompleted = st.id in doneSubTaskIds)
                     },
                     isDependencyMet = isDependencyMet,
-                    isScheduled = habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays
+                    isScheduled = habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays,
+                    blockingHabitTitle = if (isDependencyMet) null else dependency?.title
                 )
             }
         }
+    }
+
+    /** Habito requisito que bloquea avanzar `habit` en la fecha, o null si no hay bloqueo. */
+    private suspend fun blockingDependency(habit: Habit, date: String): Habit? {
+        val dependencyId = habit.dependencyHabitId ?: return null
+        val dependency = habitDao.getHabitById(dependencyId)
+        val dependencyLog = dependency?.let { habitLogDao.getLogForHabitAndDate(it.id, date) }
+        return if (isDependencySatisfied(dependency, dependencyLog, date)) null else dependency
+    }
+
+    /** Titulo del requisito que bloquea avanzar el habito en la fecha, o null si no hay bloqueo. */
+    suspend fun dependencyBlocker(habitId: Long, date: String): String? = withContext(Dispatchers.IO) {
+        val habit = habitDao.getHabitById(habitId) ?: return@withContext null
+        blockingDependency(habit, date)?.title
     }
 
     suspend fun saveHabit(habit: Habit, subTaskTitles: List<String> = emptyList()): Long = withContext(Dispatchers.IO) {
@@ -172,6 +200,10 @@ class HabitRepository(
         val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val newValue: Float? = if (value <= 0f) null else value
+        // Requisito previo: bloqueado no permite sumar avance (si permite bajar o borrar)
+        if ((newValue ?: 0f) > (existingLog?.value ?: 0f) && blockingDependency(habit, date) != null) {
+            return@withContext 0
+        }
 
         if (newValue == null) {
             habitLogDao.deleteLog(habitId, date)
@@ -210,6 +242,8 @@ class HabitRepository(
         val habit = habitDao.getHabitById(habitId) ?: return@withContext 0
         val existingLog = habitLogDao.getLogForHabitAndDate(habitId, date)
         val isDone = existingLog != null && existingLog.value >= habit.targetValue
+        // Requisito previo: bloqueado no permite completar (si permite desmarcar)
+        if (!isDone && blockingDependency(habit, date) != null) return@withContext 0
 
         val newValue: Float? = if (isDone) {
             habitLogDao.deleteLog(habitId, date)
@@ -237,6 +271,8 @@ class HabitRepository(
     suspend fun toggleSubTask(subTaskId: Long, isCompleted: Boolean, date: String): Int = withContext(Dispatchers.IO) {
         val subTask = subTaskDao.getSubTaskById(subTaskId) ?: return@withContext 0
         val habit = habitDao.getHabitById(subTask.habitId) ?: return@withContext 0
+        // Requisito previo: bloqueado no permite marcar sub-rutinas (si permite desmarcarlas)
+        if (isCompleted && blockingDependency(habit, date) != null) return@withContext 0
         var earnedXp = 0
         if (isCompleted) {
             val inserted = subTaskLogDao.insert(SubTaskLog(subTaskId = subTaskId, habitId = habit.id, date = date)) != -1L
@@ -295,6 +331,7 @@ class HabitRepository(
         val existingLog = habitLogDao.getLogForHabitAndDate(habit.id, date)
         val isDone = existingLog != null && existingLog.value >= habit.targetValue
         if (allDone == isDone) return 0
+        if (allDone && blockingDependency(habit, date) != null) return 0
 
         val newValue: Float? = if (allDone) {
             val log = existingLog?.copy(value = habit.targetValue, timestamp = System.currentTimeMillis())

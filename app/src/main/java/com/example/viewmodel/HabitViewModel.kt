@@ -342,6 +342,12 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleHabitCompletion(habitId: Long, date: String = _uiState.value.selectedDate) {
         viewModelScope.launch {
+            if (!isDoneOn(habitId, date)) {
+                repository.dependencyBlocker(habitId, date)?.let { title ->
+                    _uiState.update { it.copy(snackbarMessage = "Completa primero '$title'") }
+                    return@launch
+                }
+            }
             val gainedXp = repository.toggleHabitCompletion(habitId, date)
             WidgetUpdater.scheduleRefresh(getApplication())
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
@@ -360,7 +366,15 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun recordQuantitativeProgress(habitId: Long, value: Float, notes: String = "") {
         viewModelScope.launch {
-            val gainedXp = repository.recordHabitProgress(habitId, _uiState.value.selectedDate, value, notes)
+            val date = _uiState.value.selectedDate
+            val currentValue = _uiState.value.allLogs.firstOrNull { it.habitId == habitId && it.date == date }?.value ?: 0f
+            if (value > currentValue) {
+                repository.dependencyBlocker(habitId, date)?.let { title ->
+                    _uiState.update { it.copy(snackbarMessage = "Completa primero '$title'") }
+                    return@launch
+                }
+            }
+            val gainedXp = repository.recordHabitProgress(habitId, date, value, notes)
             val milestone = if (gainedXp > 0) repository.checkStreakMilestone(habitId) else null
             val bonusText = if (gainedXp > 0) " +$gainedXp XP" else ""
             _uiState.update { it.copy(snackbarMessage = "Progreso registrado$bonusText") }
@@ -380,6 +394,12 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             val habitId = _uiState.value.habits
                 .firstOrNull { hs -> hs.subTasks.any { it.id == subTaskId } }
                 ?.habit?.id
+            if (isCompleted && habitId != null) {
+                repository.dependencyBlocker(habitId, _uiState.value.selectedDate)?.let { title ->
+                    _uiState.update { it.copy(snackbarMessage = "Completa primero '$title'") }
+                    return@launch
+                }
+            }
             val gainedXp = repository.toggleSubTask(subTaskId, isCompleted, _uiState.value.selectedDate)
             if (gainedXp > 0) {
                 _xpGainedEvent.tryEmit(gainedXp)
@@ -659,6 +679,13 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         val msg = if (enabled) "Colores Dinámicos activados" else "Paleta estándar restaurada"
         _uiState.update { it.copy(snackbarMessage = msg) }
         triggerHaptic()
+    }
+
+    /** true si el habito ya alcanzo su meta en la fecha, segun el estado en memoria. */
+    private fun isDoneOn(habitId: Long, date: String): Boolean {
+        val habit = _uiState.value.habits.firstOrNull { it.habit.id == habitId }?.habit ?: return false
+        val log = _uiState.value.allLogs.firstOrNull { it.habitId == habitId && it.date == date } ?: return false
+        return log.value >= habit.targetValue
     }
 
     private fun triggerHaptic(pattern: LongArray = longArrayOf(0, 50)) {

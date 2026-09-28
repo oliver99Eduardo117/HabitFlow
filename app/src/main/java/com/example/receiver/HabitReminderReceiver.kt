@@ -262,6 +262,21 @@ class HabitReminderReceiver : BroadcastReceiver() {
                         return@launch
                     }
 
+                    // Requisito previo pendiente: avisar en lugar de mostrar un "completado" falso
+                    val blocker = repository.dependencyBlocker(habitId, today)
+                    if (blocker != null) {
+                        val blockedNotification = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDERS_ID)
+                            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                            .setContentTitle("$habitTitle sigue bloqueado")
+                            .setContentText("Completa primero '$blocker'.")
+                            .setColor(AndroidColor.parseColor("#6366F1"))
+                            .setPriority(NotificationCompat.PRIORITY_LOW)
+                            .setAutoCancel(true)
+                            .build()
+                        notificationManager.notify(notificationId, blockedNotification)
+                        return@launch
+                    }
+
                     val gainedXp = repository.toggleHabitCompletion(habitId, today)
                     WidgetUpdater.refreshAll(context)
                     if (gainedXp > 0) {
