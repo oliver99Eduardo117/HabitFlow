@@ -84,6 +84,7 @@ fun HabitFlowApp(
     var showManageCategoriesDialog by remember { mutableStateOf(false) }
     var showArchivedHabitsDialog by remember { mutableStateOf(false) }
     var selectedDetailHabit by remember { mutableStateOf<HabitWithStats?>(null) }
+    var quickSheetHabitId by remember { mutableStateOf<Long?>(null) }
     var showThemeSwitcherDialog by remember { mutableStateOf(false) }
     var showAiSettingsDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
@@ -160,6 +161,15 @@ fun HabitFlowApp(
         uiState.today -> "hoy"
         DateUtils.getDaysAgoDateString(1) -> "ayer"
         else -> "este día"
+    }
+
+    // Accion principal de las filas compactas: registrar cantidad o marcar/desmarcar
+    val onPrimaryHabitAction: (HabitWithStats) -> Unit = { item ->
+        if (item.habit.unit.isNotEmpty()) {
+            quantitativeHabitTarget = item
+        } else {
+            viewModel.toggleHabitCompletion(item.habit.id)
+        }
     }
 
     Scaffold(
@@ -654,36 +664,17 @@ fun HabitFlowApp(
                                     ViewLayoutMode.KANBAN -> {
                                         KanbanView(
                                             habits = filteredHabits,
-                                            onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
-                                            onOpenProgressDialog = { quantitativeHabitTarget = it },
-                                            onStartTimer = { pomodoroHabitTarget = it },
-                                            onEditHabit = {
-                                                editingHabit = it.habit
-                                                showAddEditDialog = true
-                                            },
-                                            onArchiveHabit = { viewModel.setArchived(it, true) },
-                                            onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
-                                            onViewDetail = { selectedDetailHabit = it },
-                                            onDeleteHabit = { viewModel.deleteHabit(it) },
-                                            onTestReminder = { viewModel.testHabitReminder(it.habit) }
+                                            onPrimaryAction = onPrimaryHabitAction,
+                                            onOpen = { quickSheetHabitId = it.habit.id }
                                         )
                                     }
 
                                     ViewLayoutMode.TIMELINE -> {
                                         TimelineView(
                                             habits = filteredHabits,
-                                            onToggleCompletion = { viewModel.toggleHabitCompletion(it) },
-                                            onOpenProgressDialog = { quantitativeHabitTarget = it },
-                                            onStartTimer = { pomodoroHabitTarget = it },
-                                            onEditHabit = {
-                                                editingHabit = it.habit
-                                                showAddEditDialog = true
-                                            },
-                                            onArchiveHabit = { viewModel.setArchived(it, true) },
-                                            onToggleSubTask = { st, completed -> viewModel.toggleSubTask(st.id, completed) },
-                                            onViewDetail = { selectedDetailHabit = it },
-                                            onDeleteHabit = { viewModel.deleteHabit(it) },
-                                            onTestReminder = { viewModel.testHabitReminder(it.habit) }
+                                            isToday = uiState.selectedDate == uiState.today,
+                                            onPrimaryAction = onPrimaryHabitAction,
+                                            onOpen = { quickSheetHabitId = it.habit.id }
                                         )
                                     }
                                 }
@@ -818,6 +809,40 @@ fun HabitFlowApp(
             },
             onDeleteCategory = { categoryName, fallbackCategory ->
                 viewModel.deleteCategory(categoryName, fallbackCategory)
+            }
+        )
+    }
+
+    // Hoja de detalle rapido (Linea de tiempo y Kanban). Se guarda el id para leer siempre datos frescos.
+    val quickSheetHabit = quickSheetHabitId?.let { id -> uiState.habits.firstOrNull { it.habit.id == id } }
+    val quickSheetMissing = quickSheetHabitId != null && quickSheetHabit == null
+    LaunchedEffect(quickSheetMissing) {
+        // Si el habito se archivo o elimino mientras la hoja estaba abierta, se cierra
+        if (quickSheetMissing) quickSheetHabitId = null
+    }
+    quickSheetHabit?.let { item ->
+        HabitQuickSheet(
+            item = item,
+            onDismiss = { quickSheetHabitId = null },
+            onPrimaryAction = {
+                quickSheetHabitId = null
+                onPrimaryHabitAction(item)
+            },
+            onToggleSubTask = { subTask, completed ->
+                viewModel.toggleSubTask(subTask.id, completed)
+            },
+            onStartTimer = {
+                quickSheetHabitId = null
+                pomodoroHabitTarget = item
+            },
+            onEdit = {
+                quickSheetHabitId = null
+                editingHabit = item.habit
+                showAddEditDialog = true
+            },
+            onMore = {
+                quickSheetHabitId = null
+                selectedDetailHabit = item
             }
         )
     }

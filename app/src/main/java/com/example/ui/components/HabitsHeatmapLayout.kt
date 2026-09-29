@@ -1,47 +1,97 @@
+@file:OptIn(ExperimentalLayoutApi::class)
+
 package com.example.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.Habit
 import com.example.model.HabitLog
 import com.example.model.HabitWithStats
 import com.example.util.DateUtils
 import com.example.util.IconHelper
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
+
+private const val HEATMAP_WEEKS = 18
+private val CellSize = 16.dp
+private val CellGap = 3.dp
+private val DayLabelWidth = 16.dp
+
+/** Estado de un dia en la cuadricula. */
+private enum class DayCellState { DONE, PARTIAL, MISSED, NOT_SCHEDULED, FUTURE }
+
+private fun dayStateLabel(state: DayCellState): String = when (state) {
+    DayCellState.DONE -> "Hecho"
+    DayCellState.PARTIAL -> "A medias"
+    DayCellState.MISSED -> "Sin hacer"
+    DayCellState.NOT_SCHEDULED -> "No toca"
+    DayCellState.FUTURE -> "Pendiente"
+}
+
+/** Un dia cuenta como hecho solo si el valor llega a la meta; con avance menor es "a medias". */
+private fun dayCellState(
+    habit: Habit,
+    dateStr: String,
+    log: HabitLog?,
+    today: LocalDate,
+    createdDay: LocalDate
+): DayCellState {
+    val date = LocalDate.parse(dateStr)
+    val value = log?.value ?: 0f
+    val target = if (habit.targetValue > 0f) habit.targetValue else 1f
+    return when {
+        value >= target -> DayCellState.DONE
+        date.isAfter(today) -> DayCellState.FUTURE
+        value > 0f -> DayCellState.PARTIAL
+        date.isBefore(createdDay) -> DayCellState.NOT_SCHEDULED
+        date.dayOfWeek.value !in habit.frequencyDays -> DayCellState.NOT_SCHEDULED
+        else -> DayCellState.MISSED
+    }
+}
+
+private fun frequencyLabel(days: List<Int>): String {
+    val set = days.toSet()
+    return when {
+        set.size >= 7 -> "Todos los días"
+        set == setOf(1, 2, 3, 4, 5) -> "Lunes a viernes"
+        set == setOf(6, 7) -> "Fines de semana"
+        set.isEmpty() -> "Sin días asignados"
+        else -> {
+            val names = listOf("L", "M", "X", "J", "V", "S", "D")
+            set.sorted().joinToString(" ") { names.getOrElse(it - 1) { "" } }
+        }
+    }
+}
 
 @Composable
 fun HabitsHeatmapLayout(
@@ -78,6 +128,15 @@ fun HabitsHeatmapLayout(
         return
     }
 
+    // Una sola agrupacion de registros para todas las tarjetas
+    val logsByHabit = remember(allLogs) {
+        allLogs.groupBy { it.habitId }.mapValues { entry -> entry.value.associateBy { it.date } }
+    }
+    // La matriz se recalcula si cambia el dia (termina en la semana actual)
+    val todayStr = DateUtils.getTodayDateString()
+    val dateMatrix = remember(todayStr) { DateUtils.getHeatmapDateMatrix(weeks = HEATMAP_WEEKS) }
+    val monthPositions = remember(dateMatrix) { calculateMonthPositions(dateMatrix) }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -85,15 +144,24 @@ fun HabitsHeatmapLayout(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        item(key = "heatmap_legend") {
+            HeatmapLegend()
+        }
         items(habits, key = { it.habit.id }) { habitWithStats ->
             SingleHabitHeatmapCard(
                 habitWithStats = habitWithStats,
-                allLogs = allLogs,
-                onToggleCompletion = { onToggleCompletion(habitWithStats.habit.id) },
-                onOpenProgressDialog = { onOpenProgressDialog(habitWithStats) },
-                onToggleDateCompletion = { dateStr ->
-                    onToggleDateCompletion(habitWithStats.habit.id, dateStr)
+                logsByDate = logsByHabit[habitWithStats.habit.id].orEmpty(),
+                todayStr = todayStr,
+                dateMatrix = dateMatrix,
+                monthPositions = monthPositions,
+                onPrimaryAction = {
+                    if (habitWithStats.habit.unit.isNotEmpty()) {
+                        onOpenProgressDialog(habitWithStats)
+                    } else {
+                        onToggleCompletion(habitWithStats.habit.id)
+                    }
                 },
+                onToggleDate = { dateStr -> onToggleDateCompletion(habitWithStats.habit.id, dateStr) },
                 onEditHabit = { onEditHabit(habitWithStats) }
             )
         }
@@ -101,403 +169,244 @@ fun HabitsHeatmapLayout(
 }
 
 @Composable
+private fun HeatmapLegend() {
+    val empty = MaterialTheme.colorScheme.surfaceVariant
+    val dot = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val accent = MaterialTheme.colorScheme.primary
+    val ring = MaterialTheme.colorScheme.onSurface
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        LegendItem("No toca") {
+            val r = size.minDimension
+            drawRoundRect(color = empty, cornerRadius = CornerRadius(r * 0.25f), style = Stroke(1.dp.toPx()))
+            drawCircle(color = dot, radius = r * 0.17f)
+        }
+        LegendItem("Sin hacer") {
+            drawRoundRect(color = empty, cornerRadius = CornerRadius(size.minDimension * 0.25f))
+        }
+        LegendItem("A medias") {
+            drawRoundRect(color = accent.copy(alpha = 0.42f), cornerRadius = CornerRadius(size.minDimension * 0.25f))
+        }
+        LegendItem("Hecho") {
+            drawRoundRect(color = accent, cornerRadius = CornerRadius(size.minDimension * 0.25f))
+        }
+        LegendItem("Hoy") {
+            drawRoundRect(color = empty, cornerRadius = CornerRadius(size.minDimension * 0.25f))
+            drawRoundRect(
+                color = ring,
+                cornerRadius = CornerRadius(size.minDimension * 0.25f),
+                style = Stroke(1.5.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable
+private fun LegendItem(
+    label: String,
+    draw: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Canvas(modifier = Modifier.size(12.dp), onDraw = draw)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun SingleHabitHeatmapCard(
     habitWithStats: HabitWithStats,
-    allLogs: List<HabitLog>,
-    onToggleCompletion: () -> Unit,
-    onOpenProgressDialog: () -> Unit,
-    onToggleDateCompletion: (String) -> Unit,
+    logsByDate: Map<String, HabitLog>,
+    todayStr: String,
+    dateMatrix: List<List<String>>,
+    monthPositions: List<HeatmapMonthPosition>,
+    onPrimaryAction: () -> Unit,
+    onToggleDate: (String) -> Unit,
     onEditHabit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val habit = habitWithStats.habit
-    val habitColor = remember(habit.colorHex) {
-        try {
-            Color(android.graphics.Color.parseColor(habit.colorHex))
-        } catch (_: Exception) {
-            Color(0xFF6366F1)
+    val habitColor = habitColorOf(habit.colorHex, MaterialTheme.colorScheme.primary)
+    val actionState = habitActionState(habitWithStats)
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+
+    val today = remember(todayStr) { LocalDate.parse(todayStr) }
+    val createdDay = remember(habit.createdAt) {
+        Instant.ofEpochMilli(habit.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+    }
+
+    // Estado de cada celda, por semana (columna) y dia (fila, lunes a domingo)
+    val cellStates = remember(habit, logsByDate, dateMatrix, today, createdDay) {
+        dateMatrix.map { week ->
+            week.map { dateStr -> dayCellState(habit, dateStr, logsByDate[dateStr], today, createdDay) }
         }
     }
-
-    val habitLogs = remember(allLogs, habit.id) {
-        allLogs.filter { it.habitId == habit.id }
+    // La semana actual es la ultima columna de la matriz
+    val thisWeek = cellStates.lastOrNull().orEmpty()
+    val weekDone = thisWeek.count { it == DayCellState.DONE }
+    val weekPlanned = dateMatrix.lastOrNull().orEmpty().count { dateStr ->
+        LocalDate.parse(dateStr).dayOfWeek.value in habit.frequencyDays
     }
 
-    val logsByDate = remember(habitLogs) {
-        habitLogs.associateBy { it.date }
-    }
+    var selectedDate by remember(habit.id) { mutableStateOf<String?>(null) }
 
-    val weeks = 18
-    val dateMatrix = remember(weeks) {
-        DateUtils.getHeatmapDateMatrix(weeks = weeks)
-    }
-
-    val monthPositions = remember(dateMatrix) {
-        calculateMonthPositions(dateMatrix)
-    }
-
-    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
-    var selectedDateStr by remember { mutableStateOf<String?>(null) }
+    val subtitle = buildList {
+        add(frequencyLabel(habit.frequencyDays))
+        if (habit.unit.isNotEmpty()) {
+            val value = habitWithStats.todayLog?.value ?: 0f
+            add("${formatHabitAmount(value)} / ${formatHabitAmount(habit.targetValue)} ${habit.unit}")
+        } else if (habitWithStats.subTasks.isNotEmpty()) {
+            add("${habitWithStats.subTasks.size} pasos")
+        }
+    }.joinToString(" · ")
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .testTag("habit_heatmap_card_${habit.id}"),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
         border = CardDefaults.outlinedCardBorder()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header Row: Icon, Title, Category, Streak Pill, and Today Action Button
+            // Cabecera: icono, nombre, frecuencia y accion del dia
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(habitColor.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(habitColor.copy(alpha = 0.16f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = IconHelper.getIconByName(habit.iconName),
-                            contentDescription = habit.title,
-                            tint = habitColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(
-                            text = habit.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = habit.category,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = habitColor,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            if (habitWithStats.currentStreak > 0) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = " • ",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Default.LocalFireDepartment,
-                                        contentDescription = null,
-                                        tint = Color(0xFFF97316),
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text(
-                                        text = "${habitWithStats.currentStreak}d racha",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFF97316),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Icon(
+                        imageVector = IconHelper.getIconByName(habit.iconName),
+                        contentDescription = null,
+                        tint = habitColor,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
-
-                // Action Check / Quantity button for Today
-                val isCompletedToday = habitWithStats.isCompletedToday
-                if (habit.unit.isNotEmpty()) {
-                    FilledTonalButton(
-                        onClick = onOpenProgressDialog,
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isCompletedToday) habitColor else habitColor.copy(alpha = 0.15f),
-                            contentColor = if (isCompletedToday) Color.White else habitColor
-                        )
-                    ) {
-                        Text(
-                            text = "${habitWithStats.todayLog?.value?.toInt() ?: 0}/${habit.targetValue.toInt()} ${habit.unit}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                } else {
-                    IconButton(
-                        onClick = onToggleCompletion,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(if (isCompletedToday) habitColor else habitColor.copy(alpha = 0.12f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Completar hoy",
-                            tint = if (isCompletedToday) Color.White else habitColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = habit.title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = muted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            val animatedStreak by animateIntAsState(
-                targetValue = habitWithStats.currentStreak,
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
-                label = "habit_card_streak"
-            )
-            val animatedBestStreak by animateIntAsState(
-                targetValue = habitWithStats.bestStreak,
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
-                label = "habit_card_best_streak"
-            )
-            val animatedTotalDays by animateIntAsState(
-                targetValue = logsByDate.size,
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
-                label = "habit_card_total_days"
-            )
-
-            // Stats summary row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MiniStatPill(
-                    label = "Racha",
-                    value = "$animatedStreak días",
-                    color = Color(0xFFF97316),
-                    modifier = Modifier.weight(1f)
-                )
-                MiniStatPill(
-                    label = "Mejor Racha",
-                    value = "$animatedBestStreak días",
-                    color = Color(0xFFF59E0B),
-                    modifier = Modifier.weight(1f)
-                )
-                MiniStatPill(
-                    label = "Total Días",
-                    value = "$animatedTotalDays",
+                IconButton(onClick = onEditHabit, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Editar ${habit.title}",
+                        tint = muted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                HabitActionRing(
+                    state = actionState,
                     color = habitColor,
-                    modifier = Modifier.weight(1f)
+                    label = habitActionLabel(habitWithStats),
+                    onClick = onPrimaryAction
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Heatmap Matrix Container (Fixed Left Day Column + Horizontally Scrollable Grid)
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                modifier = Modifier.fillMaxWidth()
+            // Datos clave
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                StatChip("Racha: ${habitWithStats.currentStreak} ${if (habitWithStats.currentStreak == 1) "día" else "días"}")
+                StatChip("Mejor: ${habitWithStats.bestStreak} ${if (habitWithStats.bestStreak == 1) "día" else "días"}")
+                StatChip("Esta semana: $weekDone de $weekPlanned")
+            }
+
+            // Cuadricula: meses arriba, letras de dia a la izquierda
+            HeatmapGrid(
+                dateMatrix = dateMatrix,
+                cellStates = cellStates,
+                monthPositions = monthPositions,
+                todayStr = todayStr,
+                selectedDate = selectedDate,
+                habitColor = habitColor,
+                onSelect = { dateStr ->
+                    selectedDate = if (selectedDate == dateStr) null else dateStr
+                }
+            )
+
+            // Barra del dia seleccionado: el cambio siempre es con un boton explicito
+            val selected = selectedDate
+            if (selected != null) {
+                val week = dateMatrix.indexOfFirst { selected in it }
+                val state = if (week >= 0) cellStates[week][dateMatrix[week].indexOf(selected)] else DayCellState.MISSED
+                val isDone = state == DayCellState.DONE
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.Top
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(start = 12.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // STICKY / FIXED LEFT COLUMN: Day Labels (L, M, X, J, V, S, D)
-                    Column(
-                        modifier = Modifier.width(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Month Header spacer so day labels match the 7 grid rows exactly
-                        Spacer(modifier = Modifier.height(22.dp))
-
-                        val dayLabels = listOf("L", "M", "X", "J", "V", "S", "D")
-                        dayLabels.forEach { label ->
-                            Box(
-                                modifier = Modifier.size(width = 24.dp, height = 15.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                        }
-                    }
-
-                    // Divider line between fixed day column and scrollable heatmap grid
                     Box(
                         modifier = Modifier
-                            .padding(horizontal = 6.dp)
-                            .width(1.dp)
-                            .height((22 + 7 * 15 + 6 * 3).dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    )
-
-                    val totalGridWidth = (dateMatrix.size * 18).dp
-
-                    // SCROLLABLE RIGHT SECTION: Month Headers + Heatmap Columns
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .horizontalScroll(scrollState)
-                    ) {
-                        // Month Headers with precise horizontal offset
-                        Box(
-                            modifier = Modifier
-                                .width(totalGridWidth)
-                                .height(22.dp)
-                        ) {
-                            monthPositions.forEach { item ->
-                                val xOffset = (item.weekIndex * 18).dp
-                                Text(
-                                    text = item.monthName,
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier.offset(x = xOffset)
-                                )
-                            }
-                        }
-
-                        // Heatmap Columns
-                        Row(
-                            modifier = Modifier.width(totalGridWidth),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            dateMatrix.forEach { week ->
-                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    week.forEach { dateStr ->
-                                        val isCompleted = logsByDate.containsKey(dateStr)
-                                        val isSelected = (selectedDateStr == dateStr)
-                                        val isToday = (dateStr == DateUtils.getTodayDateString())
-
-                                        val cellColor = if (isCompleted) habitColor else Color(0xFF334155).copy(alpha = 0.2f)
-
-                                        Box(
-                                            modifier = Modifier
-                                                .size(15.dp)
-                                                .clip(RoundedCornerShape(3.5.dp))
-                                                .background(cellColor)
-                                                .border(
-                                                    width = if (isSelected) 1.5.dp else if (isToday) 1.dp else 0.5.dp,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else if (isToday) habitColor else Color.Black.copy(alpha = 0.1f),
-                                                    shape = RoundedCornerShape(3.5.dp)
-                                                )
-                                                .clickable {
-                                                    selectedDateStr = if (selectedDateStr == dateStr) null else dateStr
-                                                }
-                                        )
-                                    }
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(
+                                when (state) {
+                                    DayCellState.DONE -> habitColor
+                                    DayCellState.PARTIAL -> habitColor.copy(alpha = 0.42f)
+                                    else -> MaterialTheme.colorScheme.outlineVariant
                                 }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Interactive Day inspector & toggle
-            AnimatedVisibility(
-                visible = selectedDateStr != null,
-                enter = fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                selectedDateStr?.let { dateStr ->
-                    val log = logsByDate[dateStr]
-                    val isDone = log != null
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isDone) habitColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        border = CardDefaults.outlinedCardBorder().copy(
-                            brush = androidx.compose.ui.graphics.SolidColor(
-                                if (isDone) habitColor.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
                             )
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "${DateUtils.formatDateForDisplay(selected)} · ${dayStateLabel(state)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            onToggleDate(selected)
+                            selectedDate = null
+                        },
+                        modifier = Modifier.heightIn(min = 40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = DateUtils.formatDateForDisplay(dateStr),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                if (isDone) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = habitColor,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = if (habit.unit.isNotEmpty() && log.value > 0f) {
-                                                "Completado (${log.value.toInt()} ${habit.unit})"
-                                            } else {
-                                                "Completado con éxito"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = habitColor
-                                        )
-                                    }
-                                } else {
-                                    Text(
-                                        text = "Sin registro este día",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            FilledTonalButton(
-                                onClick = {
-                                    onToggleDateCompletion(dateStr)
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (isDone) Color(0xFFEF4444).copy(alpha = 0.15f) else habitColor.copy(alpha = 0.2f),
-                                    contentColor = if (isDone) Color(0xFFEF4444) else habitColor
-                                )
-                            ) {
-                                Text(
-                                    text = if (isDone) "Desmarcar" else "Marcar hecho",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Text(
+                            text = if (isDone) "Desmarcar" else "Marcar hecho",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -506,32 +415,132 @@ private fun SingleHabitHeatmapCard(
 }
 
 @Composable
-private fun MiniStatPill(
-    label: String,
-    value: String,
-    color: Color,
-    modifier: Modifier = Modifier
+private fun StatChip(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun HeatmapGrid(
+    dateMatrix: List<List<String>>,
+    cellStates: List<List<DayCellState>>,
+    monthPositions: List<HeatmapMonthPosition>,
+    todayStr: String,
+    selectedDate: String?,
+    habitColor: Color,
+    onSelect: (String) -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = color.copy(alpha = 0.1f),
-        modifier = modifier
-    ) {
+    val weeks = dateMatrix.size
+    val step = CellSize + CellGap
+    val gridWidth = step * weeks - CellGap
+    val gridHeight = step * 7 - CellGap
+
+    val empty = MaterialTheme.colorScheme.surfaceVariant
+    val dot = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val todayRing = MaterialTheme.colorScheme.onSurface
+    val selectedRing = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
+
+    Row {
+        // Letras de dia: L, X, V, D (lunes, miercoles, viernes, domingo)
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .padding(top = 18.dp, end = 4.dp)
+                .width(DayLabelWidth),
+            verticalArrangement = Arrangement.spacedBy(CellGap)
         ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            listOf("L", "", "X", "", "V", "", "D").forEach { letter ->
+                Box(modifier = Modifier.height(CellSize), contentAlignment = Alignment.CenterEnd) {
+                    Text(text = letter, fontSize = 10.sp, color = muted)
+                }
+            }
+        }
+
+        Column(modifier = Modifier.horizontalScroll(scrollState)) {
+            // Meses
+            Box(
+                modifier = Modifier
+                    .width(gridWidth)
+                    .height(14.dp)
+            ) {
+                monthPositions.forEach { position ->
+                    Text(
+                        text = position.monthName,
+                        fontSize = 11.sp,
+                        color = muted,
+                        maxLines = 1,
+                        modifier = Modifier.offset(x = step * position.weekIndex)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Todas las celdas en un solo Canvas; un toque solo selecciona el dia
+            Canvas(
+                modifier = Modifier
+                    .size(width = gridWidth, height = gridHeight)
+                    .semantics { contentDescription = "Historial de las últimas $weeks semanas" }
+                    .pointerInput(dateMatrix, cellStates) {
+                        detectTapGestures { offset ->
+                            val stepPx = step.toPx()
+                            val cellPx = CellSize.toPx()
+                            val col = (offset.x / stepPx).toInt()
+                            val row = (offset.y / stepPx).toInt()
+                            val insideCell = offset.x - col * stepPx <= cellPx && offset.y - row * stepPx <= cellPx
+                            if (insideCell && col in dateMatrix.indices && row in 0..6) {
+                                if (cellStates[col][row] != DayCellState.FUTURE) {
+                                    onSelect(dateMatrix[col][row])
+                                }
+                            }
+                        }
+                    }
+            ) {
+                val stepPx = step.toPx()
+                val cellPx = CellSize.toPx()
+                val corner = CornerRadius(4.dp.toPx())
+                val cellSize = Size(cellPx, cellPx)
+
+                dateMatrix.forEachIndexed { col, week ->
+                    week.forEachIndexed { row, dateStr ->
+                        val topLeft = Offset(col * stepPx, row * stepPx)
+                        when (cellStates[col][row]) {
+                            DayCellState.DONE -> drawRoundRect(habitColor, topLeft, cellSize, corner)
+                            DayCellState.PARTIAL -> drawRoundRect(habitColor.copy(alpha = 0.42f), topLeft, cellSize, corner)
+                            DayCellState.MISSED -> drawRoundRect(empty, topLeft, cellSize, corner)
+                            DayCellState.NOT_SCHEDULED -> {
+                                drawRoundRect(empty, topLeft, cellSize, corner, style = Stroke(1.dp.toPx()))
+                                drawCircle(
+                                    color = dot,
+                                    radius = cellPx * 0.14f,
+                                    center = Offset(topLeft.x + cellPx / 2f, topLeft.y + cellPx / 2f)
+                                )
+                            }
+                            DayCellState.FUTURE -> Unit
+                        }
+                        if (dateStr == todayStr) {
+                            drawRoundRect(todayRing, topLeft, cellSize, corner, style = Stroke(1.5.dp.toPx()))
+                        }
+                        if (dateStr == selectedDate) {
+                            val grow = 1.5.dp.toPx()
+                            drawRoundRect(
+                                color = selectedRing,
+                                topLeft = Offset(topLeft.x - grow, topLeft.y - grow),
+                                size = Size(cellPx + grow * 2f, cellPx + grow * 2f),
+                                cornerRadius = CornerRadius(5.dp.toPx()),
+                                style = Stroke(2.dp.toPx())
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
