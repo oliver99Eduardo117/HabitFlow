@@ -657,7 +657,9 @@ fun HabitFlowApp(
                                             onEditHabit = {
                                                 editingHabit = it.habit
                                                 showAddEditDialog = true
-                                            }
+                                            },
+                                            onStartTimer = { pomodoroHabitTarget = it },
+                                            activeTimer = uiState.activeTimer
                                         )
                                     }
 

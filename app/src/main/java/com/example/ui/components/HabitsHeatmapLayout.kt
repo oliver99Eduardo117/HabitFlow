@@ -13,6 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,9 +27,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +42,7 @@ import com.example.model.HabitLog
 import com.example.model.HabitWithStats
 import com.example.util.DateUtils
 import com.example.util.IconHelper
+import com.example.viewmodel.ActiveTimerState
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -79,6 +86,19 @@ private fun dayCellState(
     }
 }
 
+/** Estado del cronometro para un habito: null si no hay sesion activa de ese habito. */
+private data class HabitTimerStatus(val text: String, val isPaused: Boolean)
+
+private fun timerStatusFor(habitId: Long, timer: ActiveTimerState): HabitTimerStatus? {
+    if (timer.habitId != habitId || !(timer.isRunning || timer.isPaused)) return null
+    val seconds = (if (timer.isPomodoro) timer.remainingSeconds else timer.elapsedSeconds).coerceAtLeast(0)
+    val clock = "%02d:%02d".format(seconds / 60, seconds % 60)
+    return HabitTimerStatus(
+        text = if (timer.isPaused) "En pausa $clock" else "En curso $clock",
+        isPaused = timer.isPaused
+    )
+}
+
 private fun frequencyLabel(days: List<Int>): String {
     val set = days.toSet()
     return when {
@@ -101,7 +121,9 @@ fun HabitsHeatmapLayout(
     onOpenProgressDialog: (HabitWithStats) -> Unit,
     onToggleDateCompletion: (Long, String) -> Unit,
     onEditHabit: (HabitWithStats) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onStartTimer: (HabitWithStats) -> Unit = {},
+    activeTimer: ActiveTimerState = ActiveTimerState()
 ) {
     if (habits.isEmpty()) {
         Box(
@@ -162,7 +184,10 @@ fun HabitsHeatmapLayout(
                     }
                 },
                 onToggleDate = { dateStr -> onToggleDateCompletion(habitWithStats.habit.id, dateStr) },
-                onEditHabit = { onEditHabit(habitWithStats) }
+                onEditHabit = { onEditHabit(habitWithStats) },
+                // Solo la tarjeta del habito con cronometro activo recibe el texto; las demas no se recomponen
+                timerStatus = timerStatusFor(habitWithStats.habit.id, activeTimer),
+                onStartTimer = { onStartTimer(habitWithStats) }
             )
         }
     }
@@ -233,6 +258,8 @@ private fun SingleHabitHeatmapCard(
     onPrimaryAction: () -> Unit,
     onToggleDate: (String) -> Unit,
     onEditHabit: () -> Unit,
+    timerStatus: HabitTimerStatus?,
+    onStartTimer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val habit = habitWithStats.habit
@@ -346,6 +373,15 @@ private fun SingleHabitHeatmapCard(
                 StatChip("Racha: ${habitWithStats.currentStreak} ${if (habitWithStats.currentStreak == 1) "día" else "días"}")
                 StatChip("Mejor: ${habitWithStats.bestStreak} ${if (habitWithStats.bestStreak == 1) "día" else "días"}")
                 StatChip("Esta semana: $weekDone de $weekPlanned")
+                // Temporizador: solo si el habito lo tiene y su requisito ya se cumplio
+                if (habit.hasTimer && habitWithStats.isDependencyMet) {
+                    TimerChip(
+                        status = timerStatus,
+                        habitTitle = habit.title,
+                        onClick = onStartTimer,
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    )
+                }
             }
 
             // Cuadricula: meses arriba, letras de dia a la izquierda
@@ -427,6 +463,58 @@ private fun StatChip(text: String) {
     )
 }
 
+/**
+ * Boton del temporizador. Se ve de 32dp pero su area de toque es de 48dp.
+ * En reposo dice "Temporizador"; con la sesion activa muestra el tiempo.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimerChip(
+    status: HabitTimerStatus?,
+    habitTitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val active = status != null
+    val container = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer
+    val content = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
+    val label = status?.text ?: "Temporizador"
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        contentColor = content,
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .semantics { contentDescription = "$label, ${habitTitle}" }
+    ) {
+        Row(
+            modifier = Modifier
+                .height(32.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = when {
+                    status == null -> Icons.Default.Timer
+                    status.isPaused -> Icons.Default.Pause
+                    else -> Icons.Default.PlayArrow
+                },
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
+    }
+}
+
 @Composable
 private fun HeatmapGrid(
     dateMatrix: List<List<String>>,
@@ -447,13 +535,25 @@ private fun HeatmapGrid(
     val todayRing = MaterialTheme.colorScheme.onSurface
     val selectedRing = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
+
+    // Fila de meses: su alto sigue al tamano de letra del sistema para que el texto no se corte
+    val monthLineHeight = 16.sp
+    val monthRowHeight = with(LocalDensity.current) { monthLineHeight.toDp() }
+    val monthStyle = TextStyle(fontSize = 11.sp, lineHeight = monthLineHeight, color = muted)
+
+    // Siempre inicia en la semana actual (al final). Se desplaza cuando se conoce el ancho real.
+    val scrollState = rememberScrollState()
+    LaunchedEffect(scrollState.maxValue) {
+        if (scrollState.maxValue in 1 until Int.MAX_VALUE) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
 
     Row {
         // Letras de dia: L, X, V, D (lunes, miercoles, viernes, domingo)
         Column(
             modifier = Modifier
-                .padding(top = 18.dp, end = 4.dp)
+                .padding(top = monthRowHeight + 4.dp, end = 4.dp)
                 .width(DayLabelWidth),
             verticalArrangement = Arrangement.spacedBy(CellGap)
         ) {
@@ -469,15 +569,17 @@ private fun HeatmapGrid(
             Box(
                 modifier = Modifier
                     .width(gridWidth)
-                    .height(14.dp)
+                    .height(monthRowHeight)
             ) {
                 monthPositions.forEach { position ->
                     Text(
                         text = position.monthName,
-                        fontSize = 11.sp,
-                        color = muted,
+                        style = monthStyle,
                         maxLines = 1,
-                        modifier = Modifier.offset(x = step * position.weekIndex)
+                        softWrap = false,
+                        modifier = Modifier
+                            .offset(x = step * position.weekIndex)
+                            .wrapContentWidth(unbounded = true)
                     )
                 }
             }
@@ -565,7 +667,8 @@ private fun calculateMonthPositions(dateMatrix: List<List<String>>): List<Heatma
         val monthStr = if (targetDay != null) {
             try {
                 val d = iso.parse(targetDay)
-                if (d != null) monthFmt.format(d).replaceFirstChar { it.uppercase() } else ""
+                // Algunos Android devuelven "sept." o "ago."; se deja en tres letras y sin punto
+                if (d != null) monthFmt.format(d).replace(".", "").take(3).replaceFirstChar { it.uppercase() } else ""
             } catch (_: Exception) { "" }
         } else ""
 
