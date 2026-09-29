@@ -627,7 +627,9 @@ fun HabitFlowApp(
                                                     onArchiveHabit = { viewModel.setArchived(habitStat.habit.id, true) },
                                                     onViewDetail = { selectedDetailHabit = habitStat },
                                                     onDeleteHabit = { viewModel.deleteHabit(habitStat.habit.id) },
-                                                    onTestReminder = { viewModel.testHabitReminder(habitStat.habit) }
+                                                    onTestReminder = { viewModel.testHabitReminder(habitStat.habit) },
+                                                    // Ancho util = pantalla - 32 (margen) - 32 (relleno de la tarjeta)
+                                                    compactActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 64 < 300
                                                 )
                                             }
                                         }

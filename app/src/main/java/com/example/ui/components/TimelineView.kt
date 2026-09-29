@@ -133,7 +133,9 @@ fun TimelineView(
                         onArchiveHabit = { onArchiveHabit(habitStat.habit.id) },
                         onViewDetail = { onViewDetail(habitStat) },
                         onDeleteHabit = onDeleteHabit?.let { delete -> { delete(habitStat.habit.id) } },
-                        onTestReminder = onTestReminder?.let { test -> { test(habitStat) } }
+                        onTestReminder = onTestReminder?.let { test -> { test(habitStat) } },
+                        // Ancho util = pantalla - 32 (margen) - 76 (columna de hora) - 32 (relleno de la tarjeta)
+                        compactActions = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 140 < 300
                     )
                 }
             }

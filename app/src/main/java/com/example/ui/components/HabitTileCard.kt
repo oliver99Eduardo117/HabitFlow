@@ -56,6 +56,8 @@ fun HabitTileCard(
     onViewDetail: () -> Unit = {},
     onDeleteHabit: (() -> Unit)? = null,
     onTestReminder: (() -> Unit)? = null,
+    /** true en tarjetas angostas: Registrar y el temporizador se muestran solo con icono. */
+    compactActions: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val habit = habitWithStats.habit
@@ -488,9 +490,8 @@ fun HabitTileCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Action Buttons Row: Check-in / Numeric Log / Timer
-            // En tarjetas angostas (Kanban, Linea de tiempo, telefonos chicos) los botones secundarios quedan solo con icono
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val compactActions = maxWidth < 300.dp
+            // En tarjetas angostas (compactActions) los botones secundarios quedan solo con icono.
+            // No usar BoxWithConstraints aqui: TimelineView mide la tarjeta con IntrinsicSize.Min.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -600,7 +601,6 @@ fun HabitTileCard(
                         }
                     }
                 }
-            }
             }
         }
     }

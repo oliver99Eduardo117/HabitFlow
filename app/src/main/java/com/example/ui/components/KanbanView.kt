@@ -200,7 +200,9 @@ private fun KanbanColumn(
                                 onArchiveHabit = { onArchiveHabit(habitStat.habit.id) },
                                 onViewDetail = { onViewDetail(habitStat) },
                                 onDeleteHabit = onDeleteHabit?.let { delete -> { delete(habitStat.habit.id) } },
-                                onTestReminder = onTestReminder?.let { test -> { test(habitStat) } }
+                                onTestReminder = onTestReminder?.let { test -> { test(habitStat) } },
+                                // Columna fija de 300dp: la tarjeta siempre es angosta
+                                compactActions = true
                             )
                         }
                     }
