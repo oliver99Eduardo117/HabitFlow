@@ -14,7 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +52,9 @@ data class HabitActionState(val kind: HabitActionKind, val progress: Float)
 /** Verde de "hecho" con contraste suficiente para una palomita blanca. */
 val HabitDoneFill = Color(0xFF047857)
 val HabitDoneAccent = Color(0xFF10B981)
+
+/** Naranja de la llama de racha; el mismo tono que en el Mapa de calor. */
+val HabitStreakColor = Color(0xFFEA580C)
 
 fun habitActionState(item: HabitWithStats): HabitActionState {
     val habit = item.habit
@@ -170,7 +179,16 @@ fun HabitActionRing(
     }
 }
 
-private data class MetaPart(val text: String, val color: Color? = null)
+/**
+ * Un dato de la fila: icono + texto.
+ * [color] pinta icono y texto (Hecho, bloqueado); [iconTint] pinta solo el icono (racha).
+ */
+private data class MetaPart(
+    val icon: ImageVector,
+    val text: String,
+    val color: Color? = null,
+    val iconTint: Color? = null
+)
 
 /**
  * Fila compacta de un habito para Linea de tiempo y Kanban.
@@ -194,17 +212,31 @@ fun HabitCompactRow(
     val errorText = MaterialTheme.colorScheme.error
 
     val meta = buildList {
-        if (showTime) add(MetaPart(habit.reminderTime ?: "Todo el día"))
+        if (showTime) add(MetaPart(Icons.Default.Schedule, habit.reminderTime ?: "Todo el día"))
         if (habit.unit.isNotEmpty()) {
             val value = item.todayLog?.value ?: 0f
-            add(MetaPart("${formatHabitAmount(value)} / ${formatHabitAmount(habit.targetValue)} ${habit.unit}"))
+            add(
+                MetaPart(
+                    Icons.Default.TrackChanges,
+                    "${formatHabitAmount(value)} / ${formatHabitAmount(habit.targetValue)} ${habit.unit}"
+                )
+            )
         } else if (item.subTasks.isNotEmpty()) {
-            add(MetaPart("${item.subTasks.count { it.isCompleted }} de ${item.subTasks.size} pasos"))
+            add(MetaPart(Icons.Default.Checklist, "${item.subTasks.count { it.isCompleted }} de ${item.subTasks.size} pasos"))
         }
         when {
-            isDone -> add(MetaPart("Hecho", HabitDoneAccent))
-            isBlocked -> add(MetaPart("Primero: ${item.blockingHabitTitle ?: "su requisito"}", errorText))
-            item.currentStreak > 0 -> add(MetaPart("Racha ${item.currentStreak} d"))
+            isDone -> add(MetaPart(Icons.Default.CheckCircle, "Hecho", color = HabitDoneAccent))
+            isBlocked -> add(
+                MetaPart(Icons.Default.Lock, "Primero: ${item.blockingHabitTitle ?: "su requisito"}", color = errorText)
+            )
+            // Con racha en cero no se muestra nada, para no cargar la fila
+            item.currentStreak > 0 -> add(
+                MetaPart(
+                    Icons.Default.LocalFireDepartment,
+                    if (item.currentStreak == 1) "1 día" else "${item.currentStreak} días",
+                    iconTint = HabitStreakColor
+                )
+            )
         }
     }
 
@@ -257,23 +289,31 @@ fun HabitCompactRow(
                     }
                 )
                 if (meta.isNotEmpty()) {
-                    // Los datos bajan de linea en lugar de aplastarse
+                    // Los datos bajan de linea en lugar de aplastarse; cada uno lleva su icono
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        meta.forEachIndexed { index, part ->
-                            if (index > 0) {
-                                Text(text = "·", style = MaterialTheme.typography.labelMedium, color = muted)
+                        meta.forEach { part ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = part.icon,
+                                    contentDescription = null,
+                                    tint = part.iconTint ?: part.color ?: muted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = part.text,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = part.color ?: muted,
+                                    fontWeight = if (part.color != null) FontWeight.SemiBold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                            Text(
-                                text = part.text,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = part.color ?: muted,
-                                fontWeight = if (part.color != null) FontWeight.SemiBold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
                     }
                 }

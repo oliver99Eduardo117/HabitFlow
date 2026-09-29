@@ -4,6 +4,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -63,6 +64,10 @@ private val StreakFlame = Color(0xFFEA580C)
 private val BestTrophy = Color(0xFFD97706)
 
 private fun daysLabel(count: Int): String = if (count == 1) "1 día" else "$count días"
+
+/** Alto comun de los chips de datos y del temporizador, para que queden alineados en la misma fila. */
+private val ChipHeight = 30.dp
+private val ChipShape = RoundedCornerShape(8.dp)
 
 private val CellSize = 16.dp
 private val CellGap = 3.dp
@@ -507,9 +512,10 @@ private fun StatChip(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(ChipShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            .padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            .heightIn(min = ChipHeight)
+            .padding(start = 6.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
@@ -529,10 +535,12 @@ private fun StatChip(
 }
 
 /**
- * Boton del temporizador. Se ve de 32dp pero su area de toque es de 48dp.
+ * Boton del temporizador con la misma forma y alto que los chips de datos.
+ * Es un Row con clickable y no un Surface(onClick): el Surface de Material 3 fuerza 48dp
+ * de alto y lo desalineaba del resto de la fila. Compose amplia el area de toque de los
+ * elementos chicos a 48dp sin cambiar su tamano.
  * En reposo dice "Temporizador"; con la sesion activa muestra el tiempo.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimerChip(
     status: HabitTimerStatus?,
@@ -545,38 +553,34 @@ private fun TimerChip(
     val content = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
     val label = status?.text ?: "Temporizador"
 
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = container,
-        contentColor = content,
+    Row(
         modifier = modifier
-            .minimumInteractiveComponentSize()
-            .semantics { contentDescription = "$label, ${habitTitle}" }
+            .clip(ChipShape)
+            .background(container)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "$label, $habitTitle" }
+            .heightIn(min = ChipHeight)
+            .padding(start = 8.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .height(32.dp)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = when {
-                    status == null -> Icons.Default.Timer
-                    status.isPaused -> Icons.Default.Pause
-                    else -> Icons.Default.PlayArrow
-                },
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-        }
+        Icon(
+            imageVector = when {
+                status == null -> Icons.Default.Timer
+                status.isPaused -> Icons.Default.Pause
+                else -> Icons.Default.PlayArrow
+            },
+            contentDescription = null,
+            tint = content,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = content,
+            maxLines = 1
+        )
     }
 }
 
