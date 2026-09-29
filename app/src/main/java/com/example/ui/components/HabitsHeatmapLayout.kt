@@ -12,10 +12,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +31,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +57,13 @@ import java.time.ZoneId
 import java.util.Locale
 
 private const val HEATMAP_WEEKS = 18
+
+/** Tonos de los iconos de racha y mejor racha; legibles en tema claro y oscuro. */
+private val StreakFlame = Color(0xFFEA580C)
+private val BestTrophy = Color(0xFFD97706)
+
+private fun daysLabel(count: Int): String = if (count == 1) "1 día" else "$count días"
+
 private val CellSize = 16.dp
 private val CellGap = 3.dp
 private val DayLabelWidth = 16.dp
@@ -287,15 +301,16 @@ private fun SingleHabitHeatmapCard(
 
     var selectedDate by remember(habit.id) { mutableStateOf<String?>(null) }
 
-    val subtitle = buildList {
-        add(frequencyLabel(habit.frequencyDays))
+    // Datos bajo el nombre: frecuencia y meta del dia (o numero de pasos), cada uno con su icono
+    val subtitleParts = buildList {
+        add(Icons.Default.Repeat to frequencyLabel(habit.frequencyDays))
         if (habit.unit.isNotEmpty()) {
             val value = habitWithStats.todayLog?.value ?: 0f
-            add("${formatHabitAmount(value)} / ${formatHabitAmount(habit.targetValue)} ${habit.unit}")
+            add(Icons.Default.TrackChanges to "${formatHabitAmount(value)} / ${formatHabitAmount(habit.targetValue)} ${habit.unit}")
         } else if (habitWithStats.subTasks.isNotEmpty()) {
-            add("${habitWithStats.subTasks.size} pasos")
+            add(Icons.Default.Checklist to "${habitWithStats.subTasks.size} pasos")
         }
-    }.joinToString(" · ")
+    }
 
     Surface(
         modifier = modifier
@@ -341,13 +356,31 @@ private fun SingleHabitHeatmapCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = muted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        subtitleParts.forEach { (icon, text) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = muted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = text,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = muted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 }
                 IconButton(onClick = onEditHabit, modifier = Modifier.size(40.dp)) {
                     Icon(
@@ -370,9 +403,24 @@ private fun SingleHabitHeatmapCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                StatChip("Racha: ${habitWithStats.currentStreak} ${if (habitWithStats.currentStreak == 1) "día" else "días"}")
-                StatChip("Mejor: ${habitWithStats.bestStreak} ${if (habitWithStats.bestStreak == 1) "día" else "días"}")
-                StatChip("Esta semana: $weekDone de $weekPlanned")
+                // Racha: llama naranja si esta activa; gris y "Sin racha" si esta en cero
+                val streak = habitWithStats.currentStreak
+                StatChip(
+                    icon = Icons.Default.LocalFireDepartment,
+                    iconTint = if (streak > 0) StreakFlame else muted,
+                    text = if (streak > 0) "Racha: ${daysLabel(streak)}" else "Sin racha",
+                    textColor = if (streak > 0) MaterialTheme.colorScheme.onSurface else muted
+                )
+                StatChip(
+                    icon = Icons.Default.EmojiEvents,
+                    iconTint = BestTrophy,
+                    text = "Mejor: ${daysLabel(habitWithStats.bestStreak)}"
+                )
+                StatChip(
+                    icon = Icons.Default.CalendarMonth,
+                    iconTint = habitColor,
+                    text = "Esta semana: $weekDone de $weekPlanned"
+                )
                 // Temporizador: solo si el habito lo tiene y su requisito ya se cumplio
                 if (habit.hasTimer && habitWithStats.isDependencyMet) {
                     TimerChip(
@@ -451,16 +499,33 @@ private fun SingleHabitHeatmapCard(
 }
 
 @Composable
-private fun StatChip(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurface,
+private fun StatChip(
+    icon: ImageVector,
+    iconTint: Color,
+    text: String,
+    textColor: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Row(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    )
+            .padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = textColor,
+            maxLines = 1
+        )
+    }
 }
 
 /**
