@@ -123,7 +123,6 @@ class DashboardWidget : GlanceAppWidget() {
             val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
             val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
 
-            val activeHabitsById = activeHabits.associateBy { it.id }
             val zoneId = ZoneId.systemDefault()
             val createdDateByHabitId = activeHabits.associate { habit ->
                 val createdDate = Instant.ofEpochMilli(habit.createdAt)
@@ -141,20 +140,19 @@ class DashboardWidget : GlanceAppWidget() {
                         dateStr > today -> 0f
                         else -> {
                             val dayOfWeek = DateUtils.getDayOfWeek(dateStr)
-                            val scheduledForDay = activeHabits.count { habit ->
-                                val createdDate = createdDateByHabitId[habit.id] ?: ""
-                                createdDate <= dateStr &&
-                                    (habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays)
+                            val dayLogsByHabit = (allLogsByDate[dateStr] ?: emptyList()).associateBy { it.habitId }
+                            val eligible = activeHabits.filter { habit ->
+                                dayLogsByHabit.containsKey(habit.id) ||
+                                    ((createdDateByHabitId[habit.id] ?: "") <= dateStr &&
+                                        (habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays))
                             }
-                            if (scheduledForDay == 0) {
+                            if (eligible.isEmpty()) {
                                 0f
                             } else {
-                                val dayLogs = allLogsByDate[dateStr] ?: emptyList()
-                                val doneCount = dayLogs.count { log ->
-                                    val habit = activeHabitsById[log.habitId]
-                                    habit != null && log.value >= habit.targetValue
+                                val done = eligible.count { habit ->
+                                    (dayLogsByHabit[habit.id]?.value ?: 0f) >= habit.targetValue
                                 }
-                                (doneCount.toFloat() / scheduledForDay).coerceIn(0f, 1f)
+                                done.toFloat() / eligible.size
                             }
                         }
                     }

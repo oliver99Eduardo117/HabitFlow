@@ -54,7 +54,11 @@ object WidgetRepositoryProvider {
         habitsFlows.getOrPut(date) {
             habitsFlows.keys.filter { it != date }.forEach { habitsFlows.remove(it) }
             getRepository(context).getHabitsWithStats(date)
-                .shareIn(scope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+                .shareIn(
+                    scope,
+                    SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0),
+                    replay = 1
+                )
         }
 
     fun getRepository(context: Context): HabitRepository {

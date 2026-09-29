@@ -42,6 +42,7 @@ import com.example.model.HabitWithStats
 import com.example.model.SubTask
 import com.example.util.IconHelper
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HabitTileCard(
     habitWithStats: HabitWithStats,
@@ -148,12 +149,18 @@ fun HabitTileCard(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Los chips bajan a otra linea en lugar de aplastarse cuando la tarjeta es angosta
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = habit.category,
                             style = MaterialTheme.typography.labelSmall,
                             color = habitColor,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(habitColor.copy(alpha = 0.1f))
@@ -161,7 +168,6 @@ fun HabitTileCard(
                         )
 
                         if (!habit.reminderTime.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.width(6.dp))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -180,13 +186,14 @@ fun HabitTileCard(
                                     text = if (habit.reminderMinutesAdvance > 0) "${habit.reminderTime} (-${habit.reminderMinutesAdvance}m)" else habit.reminderTime,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
 
                         if (!habitWithStats.isDependencyMet) {
-                            Spacer(modifier = Modifier.width(6.dp))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -205,7 +212,9 @@ fun HabitTileCard(
                                     text = "Bloqueado",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.error,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -479,6 +488,9 @@ fun HabitTileCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Action Buttons Row: Check-in / Numeric Log / Timer
+            // En tarjetas angostas (Kanban, Linea de tiempo, telefonos chicos) los botones secundarios quedan solo con icono
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compactActions = maxWidth < 300.dp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -489,23 +501,26 @@ fun HabitTileCard(
                     OutlinedButton(
                         onClick = onOpenProgressDialog,
                         enabled = habitWithStats.isDependencyMet || currentVal > 0f,
-                        modifier = Modifier
-                            .weight(1f)
+                        modifier = (if (compactActions) Modifier.width(48.dp) else Modifier.weight(1f))
                             .height(40.dp)
                             .testTag("log_progress_btn_${habit.id}"),
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        contentPadding = PaddingValues(horizontal = if (compactActions) 0.dp else 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Registrar valor",
-                            modifier = Modifier.size(16.dp)
+                            imageVector = if (currentVal > 0) Icons.Default.Edit else Icons.Default.Add,
+                            contentDescription = if (currentVal > 0) "Editar valor" else "Registrar valor",
+                            modifier = Modifier.size(if (compactActions) 18.dp else 16.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (currentVal > 0) "Editar valor" else "Registrar",
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        if (!compactActions) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (currentVal > 0) "Editar valor" else "Registrar",
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
@@ -513,24 +528,28 @@ fun HabitTileCard(
                 if (habit.hasTimer) FilledTonalButton(
                     onClick = onStartTimer,
                     enabled = habitWithStats.isDependencyMet,
-                    modifier = Modifier
+                    modifier = (if (compactActions) Modifier.width(48.dp) else Modifier)
                         .height(40.dp)
                         .testTag("timer_btn_${habit.id}"),
                     shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp)
+                    contentPadding = PaddingValues(horizontal = if (compactActions) 0.dp else 10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Timer,
-                        contentDescription = "Pomodoro y Cronómetro",
+                        contentDescription = "Pomodoro y Cronómetro, ${habit.timerDurationMinutes} minutos",
                         tint = habitColor,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${habit.timerDurationMinutes}m",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (!compactActions) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "${habit.timerDurationMinutes}m",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
 
                 // Main Toggle Check Button
@@ -545,7 +564,7 @@ fun HabitTileCard(
                     onClick = if (habit.unit.isNotEmpty() && isCompleted) onOpenProgressDialog else onToggleCompletion,
                     enabled = habitWithStats.isDependencyMet || isCompleted,
                     modifier = Modifier
-                        .weight(if (habit.unit.isEmpty()) 1f else 0.8f)
+                        .weight(if (habit.unit.isEmpty() || compactActions) 1f else 0.8f)
                         .height(40.dp)
                         .testTag("toggle_habit_btn_${habit.id}"),
                     shape = RoundedCornerShape(12.dp),
@@ -574,11 +593,14 @@ fun HabitTileCard(
                             Text(
                                 text = if (completed) "Hecho" else "Completar",
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
+            }
             }
         }
     }
