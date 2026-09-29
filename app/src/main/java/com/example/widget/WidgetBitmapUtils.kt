@@ -4,150 +4,184 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
+
+enum class StripDay { DONE, MISSED, REST, TODAY_PENDING }
+data class StripDayState(val label: String, val state: StripDay, val isToday: Boolean)
 
 object WidgetBitmapUtils {
 
-    /**
-     * Creates a smooth circular progress ring bitmap for DailyProgressWidget.
-     * Track: Color(0xFF334155) (DarkSurfaceVariant), Progress: #6366F1 (Indigo), StrokeCap.Round.
-     */
-    fun createProgressRingBitmap(
-        percentage: Int,
-        sizePx: Int = 210,
-        strokeWidthPx: Float = 18f,
+    fun createSegmentedRingBitmap(
+        segmentColors: List<Int>,
+        sizePx: Int,
+        strokeWidthPx: Float,
         trackColorInt: Int = 0xFF334155.toInt(),
-        progressColorInt: Int = 0xFF6366F1.toInt(),
-        completedColorInt: Int = 0xFF6366F1.toInt()
+        visibleGapDegrees: Float = 6f
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-
-        val halfStroke = strokeWidthPx / 2f
-        val rect = RectF(
-            halfStroke + 4f,
-            halfStroke + 4f,
-            sizePx - halfStroke - 4f,
-            sizePx - halfStroke - 4f
-        )
-
-        // Background track
-        val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val inset = strokeWidthPx / 2f + 1f
+        val rect = RectF(inset, inset, sizePx - inset, sizePx - inset)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = strokeWidthPx
             strokeCap = Paint.Cap.ROUND
-            color = trackColorInt
         }
-        canvas.drawOval(rect, trackPaint)
-
-        // Progress arc
-        val clampedPct = percentage.coerceIn(0, 100)
-        if (clampedPct > 0) {
-            val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = strokeWidthPx
-                strokeCap = Paint.Cap.ROUND
-                color = if (clampedPct >= 100) completedColorInt else progressColorInt
-            }
-            val sweepAngle = (clampedPct / 100f) * 360f
-            canvas.drawArc(rect, -90f, sweepAngle, false, progressPaint)
+        val n = segmentColors.size
+        if (n <= 1) {
+            paint.color = segmentColors.firstOrNull() ?: trackColorInt
+            canvas.drawOval(rect, paint)
+            return bitmap
         }
-
+        val sweepPer = 360f / n
+        val radius = rect.width() / 2f
+        val capDegrees = Math.toDegrees((strokeWidthPx / 2f / radius).toDouble()).toFloat()
+        var gap = 2f * capDegrees + visibleGapDegrees
+        if (gap > sweepPer * 0.6f) {
+            paint.strokeCap = Paint.Cap.BUTT
+            gap = if (n > 30) 0f else 3f
+        }
+        segmentColors.forEachIndexed { i, color ->
+            paint.color = color
+            canvas.drawArc(rect, -90f + i * sweepPer + gap / 2f, sweepPer - gap, false, paint)
+        }
         return bitmap
     }
 
-    /**
-     * Single shared Heatmap Bitmap drawing engine for ConsistencyWidget and DashboardWidget.
-     * Derives cell size, small proportional gaps (~13%), corner radius (~20%), month labels on top,
-     * and day initials on the left from the available targetWidthPx and targetHeightPx.
-     *
-     * @param columns Total number of week columns (e.g. 10 or 14).
-     * @param monthPositions List of Pair(monthLabel, weekIndex).
-     * @param targetWidthPx Available width in pixels for drawing.
-     * @param targetHeightPx Available height in pixels for drawing.
-     * @param cellColorProvider Lambda deciding the resolved color Int for each cell (col, row).
-     */
-    fun createHeatmapBitmap(
+    fun createAvatarRingBitmap(
+        fraction: Float,
+        sizePx: Int,
+        strokeWidthPx: Float,
+        progressColorInt: Int,
+        trackColorInt: Int = 0xFF334155.toInt()
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val inset = strokeWidthPx / 2f + 0.5f
+        val rect = RectF(inset, inset, sizePx - inset, sizePx - inset)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = strokeWidthPx
+            color = trackColorInt
+        }
+        canvas.drawOval(rect, paint)
+        paint.color = progressColorInt
+        paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawArc(rect, -90f, 360f * fraction.coerceIn(0f, 1f), false, paint)
+        return bitmap
+    }
+
+    fun createWeekStripBitmap(
+        days: List<StripDayState>,
+        widthPx: Int,
+        density: Float,
+        accentColorInt: Int = 0xFFF59E0B.toInt(),
+        missedColorInt: Int = 0xFF334155.toInt(),
+        restColorInt: Int = 0xFF475569.toInt(),
+        labelColorInt: Int = 0xFF94A3B8.toInt(),
+        todayLabelColorInt: Int = 0xFFF1F5F9.toInt()
+    ): Bitmap {
+        val heightPx = (30f * density).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(widthPx.coerceAtLeast(1), heightPx, Bitmap.Config.ARGB_8888)
+        if (days.isEmpty()) return bitmap
+        val canvas = Canvas(bitmap)
+        val slot = widthPx / days.size.toFloat()
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 10f * density
+            textAlign = Paint.Align.CENTER
+        }
+        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val labelBaseline = 10f * density
+        val dotCenterY = heightPx - 7f * density
+        days.forEachIndexed { i, day ->
+            val cx = slot * (i + 0.5f)
+            labelPaint.color = if (day.isToday) todayLabelColorInt else labelColorInt
+            labelPaint.typeface = if (day.isToday) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            canvas.drawText(day.label, cx, labelBaseline, labelPaint)
+            when (day.state) {
+                StripDay.DONE -> {
+                    dotPaint.style = Paint.Style.FILL; dotPaint.color = accentColorInt
+                    canvas.drawCircle(cx, dotCenterY, 7f * density, dotPaint)
+                }
+                StripDay.MISSED -> {
+                    dotPaint.style = Paint.Style.FILL; dotPaint.color = missedColorInt
+                    canvas.drawCircle(cx, dotCenterY, 7f * density, dotPaint)
+                }
+                StripDay.REST -> {
+                    dotPaint.style = Paint.Style.FILL; dotPaint.color = restColorInt
+                    canvas.drawCircle(cx, dotCenterY, 3f * density, dotPaint)
+                }
+                StripDay.TODAY_PENDING -> {
+                    dotPaint.style = Paint.Style.STROKE; dotPaint.strokeWidth = 2f * density
+                    dotPaint.color = accentColorInt
+                    canvas.drawCircle(cx, dotCenterY, 6f * density, dotPaint)
+                }
+            }
+        }
+        return bitmap
+    }
+
+    fun createHeatmapGridBitmap(
         columns: Int,
         monthPositions: List<Pair<String, Int>>,
-        targetWidthPx: Int = 500,
-        targetHeightPx: Int = 200,
+        cellSizePx: Float,
+        gapPx: Float,
+        monthLabelTextPx: Float,
+        highlightCell: Pair<Int, Int>? = null,
+        highlightColorInt: Int = 0xFFF1F5F9.toInt(),
+        monthLabelColorInt: Int = 0xFF94A3B8.toInt(),
         cellColorProvider: (col: Int, row: Int) -> Int
     ): Bitmap {
         val cols = columns.coerceAtLeast(1)
-        val rows = 7
-
-        val dayLabelWidthPx = (targetWidthPx * 0.07f).coerceIn(18f, 26f)
-        val monthHeaderHeightPx = (targetHeightPx * 0.18f).coerceIn(16f, 24f)
-
-        val availW = (targetWidthPx - dayLabelWidthPx).coerceAtLeast(20f)
-        val availH = (targetHeightPx - monthHeaderHeightPx).coerceAtLeast(20f)
-
-        val gapRatio = 0.13f
-        val cellSizeX = availW / (cols + (cols - 1) * gapRatio)
-        val cellSizeY = availH / (rows + (rows - 1) * gapRatio)
-
-        val cellSize = minOf(cellSizeX, cellSizeY).coerceAtLeast(4f)
-        val gapPx = (cellSize * gapRatio).coerceAtLeast(1.5f)
-        val cornerRadiusPx = (cellSize * 0.20f).coerceAtLeast(2f)
-
-        val gridW = cols * cellSize + (cols - 1) * gapPx
-        val gridH = rows * cellSize + (rows - 1) * gapPx
-
-        val widthPx = (dayLabelWidthPx + gridW).toInt().coerceAtLeast(1)
-        val heightPx = (monthHeaderHeightPx + gridH).toInt().coerceAtLeast(1)
-
+        val headerPx = monthLabelTextPx * 1.4f
+        val widthPx = (cols * cellSizePx + (cols - 1) * gapPx).toInt().coerceAtLeast(1)
+        val heightPx = (headerPx + 7 * cellSizePx + 6 * gapPx).toInt().coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val startX = dayLabelWidthPx
-        val startY = monthHeaderHeightPx
-
-        // Draw month header text
-        val monthTextSize = (monthHeaderHeightPx * 0.65f).coerceIn(10f, 16f)
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF94A3B8.toInt() // Slate 400
-            textSize = monthTextSize
+            color = monthLabelColorInt
+            textSize = monthLabelTextPx
             textAlign = Paint.Align.LEFT
         }
-
-        monthPositions.forEach { (monthLabel, weekIdx) ->
-            if (weekIdx in 0 until cols) {
-                val posX = startX + weekIdx * (cellSize + gapPx)
-                canvas.drawText(monthLabel, posX, monthHeaderHeightPx - (monthTextSize * 0.25f), textPaint)
+        monthPositions.forEach { (label, col) ->
+            if (col in 0 until cols) {
+                val x = col * (cellSizePx + gapPx)
+                if (x + textPaint.measureText(label) <= widthPx) {
+                    canvas.drawText(label, x, monthLabelTextPx, textPaint)
+                }
             }
         }
 
-        // Draw day initials (L, M, X, J, V, S, D) vertically centered to each row
-        val dayTextSize = (cellSize * 0.65f).coerceIn(9f, 15f)
-        val dayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF94A3B8.toInt()
-            textSize = dayTextSize
-            textAlign = Paint.Align.CENTER
-        }
-        val dayMetrics = dayPaint.fontMetrics
-        val textCenterOffset = (dayMetrics.descent + dayMetrics.ascent) / 2f
-        val dayLetters = listOf("L", "M", "X", "J", "V", "S", "D")
-
-        for (row in 0 until rows) {
-            val cellCenterY = startY + row * (cellSize + gapPx) + (cellSize / 2f)
-            val dayLetter = dayLetters.getOrNull(row) ?: ""
-            canvas.drawText(dayLetter, dayLabelWidthPx / 2f, cellCenterY - textCenterOffset, dayPaint)
-        }
-
-        val cellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-
+        val cellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val corner = cellSizePx * 0.25f
         for (col in 0 until cols) {
-            val left = startX + col * (cellSize + gapPx)
-            for (row in 0 until rows) {
-                val top = startY + row * (cellSize + gapPx)
-                cellPaint.color = cellColorProvider(col, row)
-                val rect = RectF(left, top, left + cellSize, top + cellSize)
-                canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, cellPaint)
+            for (row in 0 until 7) {
+                val color = cellColorProvider(col, row)
+                if (android.graphics.Color.alpha(color) == 0) continue
+                val left = col * (cellSizePx + gapPx)
+                val top = headerPx + row * (cellSizePx + gapPx)
+                cellPaint.color = color
+                canvas.drawRoundRect(RectF(left, top, left + cellSizePx, top + cellSizePx), corner, corner, cellPaint)
             }
         }
 
+        highlightCell?.let { (col, row) ->
+            if (col in 0 until cols && row in 0 until 7) {
+                val stroke = (cellSizePx * 0.15f).coerceAtLeast(2f)
+                val left = col * (cellSizePx + gapPx) + stroke / 2f
+                val top = headerPx + row * (cellSizePx + gapPx) + stroke / 2f
+                val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    strokeWidth = stroke
+                    color = highlightColorInt
+                }
+                canvas.drawRoundRect(
+                    RectF(left, top, left + cellSizePx - stroke, top + cellSizePx - stroke),
+                    corner, corner, outline
+                )
+            }
+        }
         return bitmap
     }
 }

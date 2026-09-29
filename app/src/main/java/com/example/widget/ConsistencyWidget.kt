@@ -21,11 +21,20 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
-import androidx.glance.layout.*
+import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
+import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
+import androidx.glance.layout.Row
+import androidx.glance.layout.fillMaxSize
+import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
@@ -81,61 +90,58 @@ class ConsistencyWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(16.dp)
-                    .background(ColorProvider(WidgetColors.Surface))
-                    .padding(horizontal = 10.dp, vertical = 7.dp)
+                    .appWidgetBackground()
+                    .cornerRadius(WidgetDimens.ContainerRadius)
+                    .background(ColorProvider(WidgetColors.Container))
+                    .padding(WidgetDimens.ContainerPadding)
                     .clickable(actionStartActivity(mainIntent))
             ) {
                 if (targetHabitWithStats != null) {
                     val habit = targetHabitWithStats.habit
-                    val habitLogs = allLogs.filter { it.habitId == habit.id }
-                    val completedDates = habitLogs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
                     val currentStreak = targetHabitWithStats.currentStreak
                     val bestStreak = targetHabitWithStats.bestStreak
-                    val totalActiveDays = targetHabitWithStats.totalCompletions
+                    val totalCompletions = targetHabitWithStats.totalCompletions
 
-                    val weeks = if (size.width < 220.dp) 10 else 14
-                    val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
-                    val monthPositions = DateUtils.calculateMonthPositionsForHabit(dateMatrix)
-
-                    val habitColorInt = try {
-                        android.graphics.Color.parseColor(habit.colorHex)
-                    } catch (_: Exception) {
-                        0xFF6366F1.toInt()
-                    }
+                    val habitColorInt = parseHabitColorInt(habit.colorHex)
                     val habitComposeColor = Color(habitColorInt)
 
-                    val targetHeatmapWidthPx = ((size.width.value - 20f) * density).toInt().coerceAtLeast(140)
-                    val targetHeatmapHeightPx = ((size.height.value - 64f) * density).toInt().coerceAtLeast(50)
+                    val innerW = size.width.value - 28f
+                    val gridH = size.height.value - 28f - 28f - 8f
+                    val cellDp = ((gridH - 14f - 12f) / 7f).toInt().toFloat().coerceIn(8f, 16f)
+                    val weeks = ((innerW + 2f) / (cellDp + 2f)).toInt().coerceIn(6, 30)
+                    val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
+                    val monthPositions = WidgetDates.monthPositions(dateMatrix)
+                    val valueByDate = allLogs.filter { it.habitId == habit.id }.associate { it.date to it.value }
+                    val todayCell: Pair<Int, Int>? = run {
+                        var found: Pair<Int, Int>? = null
+                        dateMatrix.forEachIndexed { col, week ->
+                            val row = week.indexOf(today)
+                            if (row >= 0) found = col to row
+                        }
+                        found
+                    }
 
-                    val uncompletedColorInt = 0x38334155
-                    val heatmapBitmap: Bitmap = remember(
-                        completedDates,
-                        habitColorInt,
-                        weeks,
-                        targetHeatmapWidthPx,
-                        targetHeatmapHeightPx
-                    ) {
-                        WidgetBitmapUtils.createHeatmapBitmap(
+                    val heatmapBitmap: Bitmap = remember(valueByDate, habitColorInt, weeks, cellDp, density) {
+                        WidgetBitmapUtils.createHeatmapGridBitmap(
                             columns = weeks,
                             monthPositions = monthPositions,
-                            targetWidthPx = targetHeatmapWidthPx,
-                            targetHeightPx = targetHeatmapHeightPx,
-                            cellColorProvider = { col, row ->
-                                val dateStr = dateMatrix.getOrNull(col)?.getOrNull(row)
-                                if (dateStr != null && completedDates.contains(dateStr)) {
-                                    habitColorInt
-                                } else {
-                                    uncompletedColorInt
-                                }
+                            cellSizePx = cellDp * density,
+                            gapPx = 2f * density,
+                            monthLabelTextPx = 10f * density,
+                            highlightCell = todayCell
+                        ) { col, row ->
+                            val date = dateMatrix.getOrNull(col)?.getOrNull(row) ?: return@createHeatmapGridBitmap 0
+                            if (date > today) 0
+                            else {
+                                val ratio = if (habit.targetValue > 0f) (valueByDate[date] ?: 0f) / habit.targetValue else 0f
+                                WidgetColors.habitIntensityColorInt(habitColorInt, ratio)
                             }
-                        )
+                        }
                     }
 
                     Column(
                         modifier = GlanceModifier.fillMaxSize()
                     ) {
-                        // 1. Encabezado compacto: Avatar 28dp + Habit info
                         Row(
                             modifier = GlanceModifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -144,8 +150,8 @@ class ConsistencyWidget : GlanceAppWidget() {
                             Box(
                                 modifier = GlanceModifier
                                     .size(28.dp)
-                                    .cornerRadius(7.dp)
-                                    .background(ColorProvider(habitComposeColor.copy(alpha = 0.20f))),
+                                    .cornerRadius(8.dp)
+                                    .background(ColorProvider(habitComposeColor.copy(alpha = 0.18f))),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (iconRes != null) {
@@ -153,186 +159,123 @@ class ConsistencyWidget : GlanceAppWidget() {
                                         provider = ImageProvider(iconRes),
                                         contentDescription = habit.title,
                                         colorFilter = ColorFilter.tint(ColorProvider(habitComposeColor)),
-                                        modifier = GlanceModifier.size(18.dp)
+                                        modifier = GlanceModifier.size(16.dp)
                                     )
                                 } else {
                                     Text(
                                         text = habit.title.take(1).uppercase(),
                                         style = TextStyle(
                                             color = ColorProvider(habitComposeColor),
-                                            fontSize = 14.sp,
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     )
                                 }
                             }
 
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-
-                            Column(modifier = GlanceModifier.defaultWeight()) {
+                            Column(
+                                modifier = GlanceModifier
+                                    .defaultWeight()
+                                    .padding(start = 8.dp)
+                            ) {
                                 Text(
                                     text = habit.title,
                                     maxLines = 1,
                                     style = TextStyle(
                                         color = ColorProvider(WidgetColors.TextPrimary),
-                                        fontSize = 12.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 )
-                                Spacer(modifier = GlanceModifier.height(1.dp))
                                 Text(
-                                    text = habit.category,
+                                    text = if (size.width.value >= 300f) {
+                                        "$totalCompletions días completados"
+                                    } else {
+                                        "$totalCompletions días"
+                                    },
                                     maxLines = 1,
                                     style = TextStyle(
                                         color = ColorProvider(WidgetColors.TextSecondary),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Normal
+                                        fontSize = 11.sp
                                     )
                                 )
                             }
-                        }
 
-                        Spacer(modifier = GlanceModifier.height(3.dp))
-
-                        // 2. Fila de 3 tarjetas de stats compactas con iconos tematicos
-                        Row(
-                            modifier = GlanceModifier.fillMaxWidth()
-                        ) {
-                            // Stat 1: Racha (Llama Amber)
-                            Box(
-                                modifier = GlanceModifier
-                                    .defaultWeight()
-                                    .cornerRadius(6.dp)
-                                    .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 2.dp, vertical = 2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Image(
-                                        provider = ImageProvider(R.drawable.ic_widget_flame),
-                                        contentDescription = "Racha",
-                                        colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.Amber)),
-                                        modifier = GlanceModifier.size(12.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Image(
+                                    provider = ImageProvider(R.drawable.ic_widget_flame),
+                                    contentDescription = "Racha",
+                                    modifier = GlanceModifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "$currentStreak",
+                                    modifier = GlanceModifier.padding(start = 3.dp),
+                                    style = TextStyle(
+                                        color = ColorProvider(WidgetColors.Amber),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
+                                )
+                                if (size.width.value >= 300f) {
                                     Text(
-                                        text = "$currentStreak d",
-                                        maxLines = 1,
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = "Racha",
-                                        maxLines = 1,
+                                        text = "racha",
+                                        modifier = GlanceModifier.padding(start = 3.dp),
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Normal
+                                            fontSize = 11.sp
                                         )
                                     )
                                 }
                             }
 
-                            Spacer(modifier = GlanceModifier.width(3.dp))
-
-                            // Stat 2: Mejor Racha (Trofeo Amber)
-                            Box(
-                                modifier = GlanceModifier
-                                    .defaultWeight()
-                                    .cornerRadius(6.dp)
-                                    .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 2.dp, vertical = 2.dp),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = GlanceModifier.padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Image(
-                                        provider = ImageProvider(R.drawable.ic_widget_trophy),
-                                        contentDescription = "Mejor",
-                                        colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.Amber)),
-                                        modifier = GlanceModifier.size(12.dp)
+                                Image(
+                                    provider = ImageProvider(R.drawable.ic_widget_trophy),
+                                    contentDescription = "Récord",
+                                    colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.TextSecondary)),
+                                    modifier = GlanceModifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "$bestStreak",
+                                    modifier = GlanceModifier.padding(start = 3.dp),
+                                    style = TextStyle(
+                                        color = ColorProvider(WidgetColors.TextPrimary),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
+                                )
+                                if (size.width.value >= 300f) {
                                     Text(
-                                        text = "$bestStreak d",
-                                        maxLines = 1,
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = "Mejor",
-                                        maxLines = 1,
+                                        text = "récord",
+                                        modifier = GlanceModifier.padding(start = 3.dp),
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Normal
-                                        )
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = GlanceModifier.width(3.dp))
-
-                            // Stat 3: Total Días (Calendario Check con color del hábito)
-                            Box(
-                                modifier = GlanceModifier
-                                    .defaultWeight()
-                                    .cornerRadius(6.dp)
-                                    .background(ColorProvider(WidgetColors.CardSurface))
-                                    .padding(horizontal = 2.dp, vertical = 2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Image(
-                                        provider = ImageProvider(R.drawable.ic_widget_calendar_check),
-                                        contentDescription = "Total",
-                                        colorFilter = ColorFilter.tint(ColorProvider(habitComposeColor)),
-                                        modifier = GlanceModifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "$totalActiveDays d",
-                                        maxLines = 1,
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.TextPrimary),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    )
-                                    Text(
-                                        text = "Total",
-                                        maxLines = 1,
-                                        style = TextStyle(
-                                            color = ColorProvider(WidgetColors.TextSecondary),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Normal
+                                            fontSize = 11.sp
                                         )
                                     )
                                 }
                             }
                         }
 
-                        Spacer(modifier = GlanceModifier.height(3.dp))
-
-                        // 3. Heatmap expandido
                         Box(
                             modifier = GlanceModifier
                                 .fillMaxWidth()
-                                .defaultWeight(),
+                                .defaultWeight()
+                                .padding(top = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
                                 provider = ImageProvider(heatmapBitmap),
-                                contentDescription = "Mapa de constancia de ${habit.title}",
+                                contentDescription = "Constancia de ${habit.title}",
                                 contentScale = ContentScale.Fit,
                                 modifier = GlanceModifier.fillMaxSize()
                             )
                         }
                     }
                 } else {
-                    // Empty state
                     val emptyMessage = if (habitsWithStats.isEmpty()) {
                         "Crea un hábito en la app para ver su constancia"
                     } else {
@@ -349,7 +292,6 @@ class ConsistencyWidget : GlanceAppWidget() {
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextSecondary),
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Normal,
                                 textAlign = TextAlign.Center
                             )
                         )
@@ -359,5 +301,3 @@ class ConsistencyWidget : GlanceAppWidget() {
         }
     }
 }
-
-

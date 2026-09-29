@@ -3,6 +3,7 @@ package com.example.util
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class DateUtilsTest {
 
@@ -158,5 +159,30 @@ class DateUtilsTest {
 
         val statsHabit2 = DateUtils.calculateMonthlyTrend(listOf(habit1, habit2), logs, cal, filterHabitId = 2L)
         assertEquals(2, statsHabit2.totalCompletions)
+    }
+
+    @Test
+    fun `calculateStreak ignora los dias no programados`() {
+        val today = LocalDate.now()
+        val weekdays = listOf(1, 2, 3, 4, 5)
+        val completed = (1..14).map { today.minusDays(it.toLong()) }
+            .filter { it.dayOfWeek.value in weekdays }
+            .map { it.toString() }
+            .toSet()
+        val (current, best) = DateUtils.calculateStreak(completed, weekdays)
+        assertEquals(completed.size, current)
+        assertEquals(completed.size, best)
+    }
+
+    @Test
+    fun `calculateStreak se rompe si falta un dia programado`() {
+        val today = LocalDate.now()
+        val weekdays = listOf(1, 2, 3, 4, 5)
+        val scheduledPast = (1..14).map { today.minusDays(it.toLong()) }
+            .filter { it.dayOfWeek.value in weekdays }
+        val completed = scheduledPast.drop(1).map { it.toString() }.toSet()
+        val (current, best) = DateUtils.calculateStreak(completed, weekdays)
+        assertEquals(0, current)
+        assertEquals(completed.size, best)
     }
 }

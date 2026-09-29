@@ -88,7 +88,7 @@ class HabitRepository(
                 val todayLog = logsByHabitAndDate["${habit.id}_$selectedDate"]
                 val isCompletedToday = todayLog != null && todayLog.value >= habit.targetValue
                 val completedDates = habitLogs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
-                val (currentStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
+                val (currentStreak, bestStreak) = DateUtils.calculateStreak(completedDates, habit.frequencyDays)
 
                 // Requisito previo (misma regla que aplican las escrituras)
                 val dependency = habit.dependencyHabitId?.let { habitsById[it] }
@@ -472,7 +472,7 @@ class HabitRepository(
         var habit = habitDao.getHabitById(habitId) ?: return@withContext null
         val logs = habitLogDao.getLogsForHabit(habitId).first()
         val completedDates = logs.filter { it.value >= habit.targetValue }.map { it.date }.toSet()
-        val (currentStreak, _) = DateUtils.calculateStreak(completedDates)
+        val (currentStreak, _) = DateUtils.calculateStreak(completedDates, habit.frequencyDays)
 
         if (currentStreak == 1 && habit.lastMilestoneStreakClaimed != 0) {
             habit = habit.copy(lastMilestoneStreakClaimed = 0)
@@ -544,7 +544,7 @@ class HabitRepository(
         val habitsSummary = habits.joinToString("\n") { h ->
             val habitLogs = logsByHabit[h.id] ?: emptyList()
             val completedDates = habitLogs.filter { it.value >= h.targetValue }.map { it.date }.toSet()
-            val (curStreak, bestStreak) = DateUtils.calculateStreak(completedDates)
+            val (curStreak, bestStreak) = DateUtils.calculateStreak(completedDates, h.frequencyDays)
             "- ${h.title} (Categoría: ${h.category}, Meta: ${h.targetValue} ${h.unit}, Racha actual: $curStreak días, Mejor racha: $bestStreak días, Total completados: ${completedDates.size})"
         }
 

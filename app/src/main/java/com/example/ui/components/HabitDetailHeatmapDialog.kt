@@ -80,9 +80,8 @@ fun HabitDetailHeatmapDialog(
     val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
     var selectedDayStr by remember { mutableStateOf<String?>(null) }
 
-    val (currentStreak, bestStreak) = remember(logsByDate) {
-        DateUtils.calculateStreak(logsByDate.keys)
-    }
+    val currentStreak = habitWithStats.currentStreak
+    val bestStreak = habitWithStats.bestStreak
     val totalActiveDays = logsByDate.keys.size
 
     val animatedCurrentStreak by animateIntAsState(

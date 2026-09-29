@@ -80,9 +80,8 @@ fun HabitDetailDialog(
         habitLogs.associateBy { it.date }
     }
 
-    val (currentStreak, bestStreak) = remember(logsByDate) {
-        DateUtils.calculateStreak(logsByDate.keys)
-    }
+    val currentStreak = habitWithStats.currentStreak
+    val bestStreak = habitWithStats.bestStreak
     val totalActiveDays = logsByDate.keys.size
 
     val animatedCurrentStreak by animateIntAsState(

@@ -7,7 +7,6 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 import java.util.Calendar
 import java.util.Locale
@@ -160,63 +159,52 @@ object DateUtils {
         return days
     }
 
-    fun calculateStreak(completedDates: Set<String>): Pair<Int, Int> {
+    fun calculateStreak(
+        completedDates: Set<String>,
+        frequencyDays: List<Int> = emptyList()
+    ): Pair<Int, Int> {
         if (completedDates.isEmpty()) return Pair(0, 0)
 
-        val todayStr = getTodayDateString()
-        val yesterdayStr = getDaysAgoDateString(1)
-
-        var currentStreak = 0
-
-        // If today is completed, start from today. If not, start from yesterday if completed.
-        val startDateStr = when {
-            completedDates.contains(todayStr) -> todayStr
-            completedDates.contains(yesterdayStr) -> yesterdayStr
-            else -> null
-        }
-
-        if (startDateStr != null) {
-            var currentDate: LocalDate? = try {
-                LocalDate.parse(startDateStr, isoFormat)
-            } catch (_: Exception) {
-                null
-            }
-
-            while (currentDate != null) {
-                val checkStr = currentDate.format(isoFormat)
-                if (completedDates.contains(checkStr)) {
-                    currentStreak++
-                    currentDate = currentDate.minusDays(1)
-                } else {
-                    break
-                }
-            }
-        }
-
-        // Calculate best streak across all history
-        val sortedDates = completedDates.mapNotNull {
+        val parsed = completedDates.mapNotNull {
             try { LocalDate.parse(it, isoFormat) } catch (_: Exception) { null }
-        }.sorted()
+        }.toSet()
+        if (parsed.isEmpty()) return Pair(0, 0)
 
+        // 1 = lunes ... 7 = domingo. Vacío o los 7 días = diario.
+        val scheduledDays = frequencyDays.filter { it in 1..7 }.toSet()
+        val isDaily = scheduledDays.isEmpty() || scheduledDays.size == 7
+        fun isScheduled(date: LocalDate): Boolean = isDaily || date.dayOfWeek.value in scheduledDays
+
+        val today = LocalDate.now()
+        val earliest = parsed.minOrNull() ?: return Pair(0, 0)
+
+        // Racha actual: hoy suma si está hecho; si falta, no rompe (el día no ha terminado).
+        // Un día no programado sin registro se salta; uno programado sin registro rompe.
+        // Un registro en un día no programado suma.
+        var currentStreak = if (today in parsed) 1 else 0
+        var day = today.minusDays(1)
+        while (!day.isBefore(earliest)) {
+            if (day in parsed) {
+                currentStreak++
+            } else if (isScheduled(day)) {
+                break
+            }
+            day = day.minusDays(1)
+        }
+
+        // Mejor racha: mismo criterio recorriendo el historial completo.
+        val lastDay = parsed.maxOrNull()?.takeIf { it.isAfter(today) } ?: today
         var bestStreak = 0
-        var tempStreak = 0
-        var prevDate: LocalDate? = null
-
-        for (date in sortedDates) {
-            if (prevDate == null) {
-                tempStreak = 1
-            } else {
-                val diffDays = ChronoUnit.DAYS.between(prevDate, date)
-                if (diffDays == 1L) {
-                    tempStreak++
-                } else if (diffDays > 1L) {
-                    tempStreak = 1
-                }
+        var run = 0
+        var cursor = earliest
+        while (!cursor.isAfter(lastDay)) {
+            if (cursor in parsed) {
+                run++
+                if (run > bestStreak) bestStreak = run
+            } else if (isScheduled(cursor) && cursor != today) {
+                run = 0
             }
-            if (tempStreak > bestStreak) {
-                bestStreak = tempStreak
-            }
-            prevDate = date
+            cursor = cursor.plusDays(1)
         }
 
         return Pair(currentStreak, maxOf(currentStreak, bestStreak))

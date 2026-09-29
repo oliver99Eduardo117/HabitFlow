@@ -19,8 +19,8 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
@@ -66,14 +66,15 @@ class TodayWidget : GlanceAppWidget() {
             Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .cornerRadius(16.dp)
-                    .background(ColorProvider(WidgetColors.Surface))
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .appWidgetBackground()
+                    .cornerRadius(WidgetDimens.ContainerRadius)
+                    .background(ColorProvider(WidgetColors.Container))
+                    .padding(WidgetDimens.ContainerPadding)
             ) {
                 Column(
                     modifier = GlanceModifier.fillMaxSize()
                 ) {
-                    // Header row: "Hoy" (13sp medium DarkOnSurface) ... "X de Y" (11sp mutedText) - opens app
+                    // Encabezado: abre la app
                     Row(
                         modifier = GlanceModifier
                             .fillMaxWidth()
@@ -84,206 +85,63 @@ class TodayWidget : GlanceAppWidget() {
                             text = "Hoy",
                             style = TextStyle(
                                 color = ColorProvider(WidgetColors.TextPrimary),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                        Text(
+                            text = WidgetDates.shortDate(),
+                            modifier = GlanceModifier.padding(start = 8.dp),
+                            style = TextStyle(
+                                color = ColorProvider(WidgetColors.TextSecondary),
+                                fontSize = 12.sp
                             )
                         )
                         Spacer(modifier = GlanceModifier.defaultWeight())
-                        Text(
-                            text = "$completedCount de $totalHabits",
-                            style = TextStyle(
-                                color = ColorProvider(WidgetColors.MutedText),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Normal
-                            )
-                        )
+                        if (totalHabits > 0 && completedCount == totalHabits) {
+                            DayCompletePill()
+                        } else if (totalHabits > 0) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "$completedCount",
+                                    style = TextStyle(
+                                        color = ColorProvider(WidgetColors.TextPrimary),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                                Text(
+                                    text = " de $totalHabits",
+                                    style = TextStyle(
+                                        color = ColorProvider(WidgetColors.TextSecondary),
+                                        fontSize = 13.sp
+                                    )
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = GlanceModifier.height(6.dp))
-
                     if (todayHabits.isEmpty()) {
-                        Box(
-                            modifier = GlanceModifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Sin hábitos para hoy",
-                                style = TextStyle(
-                                    color = ColorProvider(WidgetColors.TextSecondary),
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
+                        NoHabitsTodayState(habitsWithStats)
                     } else {
+                        SegmentedProgressBar(
+                            habits = todayHabits,
+                            modifier = GlanceModifier.padding(top = 10.dp, bottom = 6.dp)
+                        )
                         LazyColumn(
                             modifier = GlanceModifier.fillMaxSize()
                         ) {
-                            items(todayHabits) { item ->
-                                HabitRowItem(item = item, todayTabIntent = mainIntent)
+                            items(todayHabits, itemId = { it.habit.id }) { item ->
+                                HabitWidgetRow(
+                                    item = item,
+                                    widgetType = "today",
+                                    openAppIntent = mainIntent,
+                                    rowHeight = 42.dp
+                                )
                             }
                         }
                     }
                 }
-            }
-        }
-    }
-
-    @Composable
-    private fun HabitRowItem(item: HabitWithStats, todayTabIntent: Intent) {
-        val isCompleted = item.isCompletedToday
-        val isLocked = !item.isDependencyMet && !isCompleted
-
-        val rowAction = if (isLocked) {
-            actionStartActivity(todayTabIntent)
-        } else {
-            actionRunCallback<ToggleHabitAction>(
-                actionParametersOf(
-                    ToggleHabitAction.habitIdKey to item.habit.id,
-                    ToggleHabitAction.widgetTypeKey to "today"
-                )
-            )
-        }
-
-        Row(
-            modifier = GlanceModifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp)
-                .clickable(rowAction),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isLocked) {
-                Box(
-                    modifier = GlanceModifier.size(22.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_widget_lock),
-                        contentDescription = "Bloqueado",
-                        colorFilter = ColorFilter.tint(ColorProvider(WidgetColors.MutedText)),
-                        modifier = GlanceModifier.size(16.dp)
-                    )
-                }
-            } else {
-                // Checkbox circle: 22dp (Emerald solid if completed, SurfaceVariant if not)
-                val checkColor = if (isCompleted) WidgetColors.Emerald else WidgetColors.SurfaceVariant
-
-                Box(
-                    modifier = GlanceModifier
-                        .size(22.dp)
-                        .cornerRadius(11.dp)
-                        .background(ColorProvider(checkColor)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isCompleted) {
-                        Image(
-                            provider = ImageProvider(R.drawable.ic_widget_check),
-                            contentDescription = null,
-                            modifier = GlanceModifier.size(13.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = GlanceModifier.width(8.dp))
-
-            // Habit Icon (14dp tinted with habit color or letter fallback Box)
-            val iconRes = WidgetIconHelper.getWidgetIconRes(item.habit.iconName)
-            val habitColor = try {
-                Color(android.graphics.Color.parseColor(item.habit.colorHex))
-            } catch (_: Exception) {
-                WidgetColors.Indigo
-            }
-
-            if (iconRes != null) {
-                Image(
-                    provider = ImageProvider(iconRes),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(ColorProvider(habitColor)),
-                    modifier = GlanceModifier.size(14.dp)
-                )
-            } else {
-                Box(
-                    modifier = GlanceModifier
-                        .size(14.dp)
-                        .cornerRadius(3.dp)
-                        .background(ColorProvider(habitColor.copy(alpha = 0.25f))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = item.habit.title.take(1).uppercase(),
-                        style = TextStyle(
-                            color = ColorProvider(habitColor),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-            }
-            Spacer(modifier = GlanceModifier.width(6.dp))
-
-            // Habit title: 14sp (TextSecondary for completed, MutedText for locked, TextPrimary for uncompleted)
-            Column(
-                modifier = GlanceModifier.defaultWeight()
-            ) {
-                Text(
-                    text = item.habit.title,
-                    maxLines = 1,
-                    style = TextStyle(
-                        color = ColorProvider(
-                            when {
-                                isCompleted -> WidgetColors.TextSecondary
-                                isLocked -> WidgetColors.MutedText
-                                else -> WidgetColors.TextPrimary
-                            }
-                        ),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                if (isLocked && !item.blockingHabitTitle.isNullOrBlank()) {
-                    Text(
-                        text = "Primero: ${item.blockingHabitTitle}",
-                        maxLines = 1,
-                        style = TextStyle(
-                            color = ColorProvider(WidgetColors.MutedText),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                    )
-                }
-            }
-
-            // Streak: flame + number in 13sp Amber if streak > 0, or dash "—" in 13sp mutedText if streak = 0
-            val effectiveStreak = item.currentStreak
-
-            if (effectiveStreak > 0) {
-                Spacer(modifier = GlanceModifier.width(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_widget_flame),
-                        contentDescription = "Racha",
-                        modifier = GlanceModifier.size(14.dp)
-                    )
-                    Spacer(modifier = GlanceModifier.width(2.dp))
-                    Text(
-                        text = "$effectiveStreak",
-                        style = TextStyle(
-                            color = ColorProvider(WidgetColors.Amber),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
-            } else {
-                Spacer(modifier = GlanceModifier.width(6.dp))
-                Text(
-                    text = "—",
-                    style = TextStyle(
-                        color = ColorProvider(WidgetColors.MutedText),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
             }
         }
     }
