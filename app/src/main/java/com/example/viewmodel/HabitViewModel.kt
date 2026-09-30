@@ -11,12 +11,17 @@ import com.example.model.*
 import com.example.notification.NotificationHelper
 import com.example.repository.HabitRepository
 import com.example.service.TimerManager
+import com.example.util.CalendarMonthCalculator
+import com.example.util.CalendarMonthSummary
 import com.example.util.DateUtils
 import com.example.util.ThemePreferences
 import com.example.widget.WidgetUpdater
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
 
 enum class NavigationTab {
     TODAY,
@@ -90,6 +95,30 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     val themeMode: StateFlow<ThemeMode> = themePrefs.themeMode
     val dynamicColor: StateFlow<Boolean> = themePrefs.dynamicColor
+
+    /** Entradas del calendario; se comparan para no recalcular en cada tic del temporizador. */
+    private data class CalendarInputs(
+        val habits: List<Habit>,
+        val logs: List<HabitLog>,
+        val month: YearMonth,
+        val today: LocalDate
+    )
+
+    /** Resumen del mes que muestra la pestana Calendario: siempre el mes de la fecha seleccionada. */
+    val calendarMonth: StateFlow<CalendarMonthSummary?> = _uiState
+        .map { state ->
+            val today = parseIsoDateOr(state.today, LocalDate.now())
+            CalendarInputs(
+                habits = state.habits.map { it.habit },
+                logs = state.allLogs,
+                month = YearMonth.from(parseIsoDateOr(state.selectedDate, today)),
+                today = today
+            )
+        }
+        .distinctUntilChanged()
+        .map { CalendarMonthCalculator.build(it.habits, it.logs, it.month, it.today) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -280,6 +309,22 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Cambia el mes del calendario. Selecciona hoy si el mes nuevo lo contiene;
+     * si no, el dia 1 de ese mes.
+     */
+    fun shiftCalendarMonth(deltaMonths: Int) {
+        val state = _uiState.value
+        val today = parseIsoDateOr(state.today, LocalDate.now())
+        val current = parseIsoDateOr(state.selectedDate, today)
+        val target = YearMonth.from(current).plusMonths(deltaMonths.toLong())
+        val newDate = if (YearMonth.from(today) == target) today else target.atDay(1)
+        setSelectedDate(newDate.toString())
+    }
+
+    /** Los dias futuros se pueden consultar pero no marcar. Fechas ISO: se comparan como texto. */
+    private fun isFutureDate(date: String): Boolean = date > _uiState.value.today
+
+    /**
      * Si el dia calendario cambio desde la ultima lectura, actualiza `today`
      * y regresa la fecha seleccionada al dia nuevo para no escribir en un dia viejo.
      */
@@ -341,6 +386,10 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleHabitCompletion(habitId: Long, date: String = _uiState.value.selectedDate) {
+        if (isFutureDate(date)) {
+            _uiState.update { it.copy(snackbarMessage = FUTURE_DAY_MESSAGE) }
+            return
+        }
         viewModelScope.launch {
             if (!isDoneOn(habitId, date)) {
                 repository.dependencyBlocker(habitId, date)?.let { title ->
@@ -367,6 +416,10 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordQuantitativeProgress(habitId: Long, value: Float, notes: String = "") {
+        if (isFutureDate(_uiState.value.selectedDate)) {
+            _uiState.update { it.copy(snackbarMessage = FUTURE_DAY_MESSAGE) }
+            return
+        }
         viewModelScope.launch {
             val date = _uiState.value.selectedDate
             val currentValue = _uiState.value.allLogs.firstOrNull { it.habitId == habitId && it.date == date }?.value ?: 0f
@@ -393,6 +446,10 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSubTask(subTaskId: Long, isCompleted: Boolean) {
+        if (isFutureDate(_uiState.value.selectedDate)) {
+            _uiState.update { it.copy(snackbarMessage = FUTURE_DAY_MESSAGE) }
+            return
+        }
         viewModelScope.launch {
             val habitId = _uiState.value.habits
                 .firstOrNull { hs -> hs.subTasks.any { it.id == subTaskId } }
@@ -701,3 +758,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {}
     }
 }
+
+private const val FUTURE_DAY_MESSAGE = "Ese día todavía no llega"
+
+/** Lee una fecha "yyyy-MM-dd"; si no se puede leer, usa [fallback]. */
+private fun parseIsoDateOr(value: String, fallback: LocalDate): LocalDate =
+    runCatching { LocalDate.parse(value) }.getOrDefault(fallback)

@@ -686,16 +686,16 @@ fun HabitFlowApp(
                 }
 
                 NavigationTab.CALENDAR -> {
+                    val calendarMonth by viewModel.calendarMonth.collectAsStateWithLifecycle()
                     CalendarMonthView(
+                        month = calendarMonth,
                         selectedDate = uiState.selectedDate,
-                        habitsWithStats = uiState.habits,
-                        allLogs = uiState.allLogs,
-                        onSelectDate = { dateStr ->
-                            viewModel.setSelectedDate(dateStr)
-                        },
-                        onToggleHabitCompletion = { habitId ->
-                            viewModel.toggleHabitCompletion(habitId, uiState.selectedDate)
-                        }
+                        dayHabits = uiState.habits,
+                        onSelectDate = { dateStr -> viewModel.setSelectedDate(dateStr) },
+                        onShiftMonth = { delta -> viewModel.shiftCalendarMonth(delta) },
+                        onGoToday = { viewModel.setSelectedDate(uiState.today) },
+                        onPrimaryAction = onPrimaryHabitAction,
+                        onOpenHabit = { quickSheetHabitId = it.habit.id }
                     )
                 }
 

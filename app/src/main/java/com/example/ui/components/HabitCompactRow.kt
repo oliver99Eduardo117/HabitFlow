@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -104,9 +105,11 @@ fun HabitActionRing(
     color: Color,
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actionEnabled: Boolean = true
 ) {
-    val enabled = state.kind != HabitActionKind.BLOCKED
+    // actionEnabled = false: dias futuros del calendario. Se ve atenuado y no responde.
+    val enabled = actionEnabled && state.kind != HabitActionKind.BLOCKED
     val track = MaterialTheme.colorScheme.surfaceVariant
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val progress by animateFloatAsState(
@@ -118,6 +121,7 @@ fun HabitActionRing(
     Box(
         modifier = modifier
             .size(48.dp)
+            .alpha(if (actionEnabled) 1f else 0.4f)
             .clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
@@ -201,7 +205,8 @@ fun HabitCompactRow(
     showTime: Boolean,
     onPrimaryAction: () -> Unit,
     onOpen: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actionEnabled: Boolean = true
 ) {
     val habit = item.habit
     val habitColor = habitColorOf(habit.colorHex, MaterialTheme.colorScheme.primary)
@@ -334,7 +339,8 @@ fun HabitCompactRow(
                 state = state,
                 color = habitColor,
                 label = habitActionLabel(item),
-                onClick = onPrimaryAction
+                onClick = onPrimaryAction,
+                actionEnabled = actionEnabled
             )
         }
     }
