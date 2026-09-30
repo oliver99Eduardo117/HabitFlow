@@ -31,6 +31,7 @@ import androidx.glance.layout.Row
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
+import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -227,7 +228,9 @@ class DailyProgressWidget : GlanceAppWidget() {
                                     Text(
                                         text = next.habit.title,
                                         maxLines = 1,
-                                        modifier = GlanceModifier.padding(start = 4.dp),
+                                        modifier = GlanceModifier
+                                            .padding(start = 4.dp)
+                                            .width((size.width.value - 28f - 60f).coerceAtLeast(40f).dp),
                                         style = TextStyle(
                                             color = ColorProvider(WidgetColors.TextPrimary),
                                             fontSize = 12.sp,

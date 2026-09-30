@@ -82,7 +82,7 @@ fun HabitDetailDialog(
 
     val currentStreak = habitWithStats.currentStreak
     val bestStreak = habitWithStats.bestStreak
-    val totalActiveDays = logsByDate.keys.size
+    val totalActiveDays = habitWithStats.totalCompletions
 
     val animatedCurrentStreak by animateIntAsState(
         targetValue = currentStreak,

@@ -16,7 +16,6 @@ object DateUtils {
 
     private val isoFormat: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE // "yyyy-MM-dd"
     private val displayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, d 'de' MMMM", localeSpanish)
-    private val shortMonthFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM", localeSpanish)
     private val monthYearFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", localeSpanish)
 
     private fun Calendar.toLocalDate(): LocalDate {
@@ -93,38 +92,6 @@ object DateUtils {
             matrix.add(weekDays)
         }
         return matrix
-    }
-
-    fun calculateMonthPositionsForHabit(dateMatrix: List<List<String>>): List<Pair<String, Int>> {
-        if (dateMatrix.isEmpty()) return emptyList()
-        val positions = mutableListOf<Pair<String, Int>>()
-
-        var lastMonth = ""
-        var lastAddedWeek = -10
-
-        dateMatrix.forEachIndexed { weekIndex, week ->
-            val firstOfMonth = week.find { it.endsWith("-01") }
-            val targetDay = firstOfMonth ?: week.getOrNull(3) ?: week.firstOrNull()
-            val monthStr = if (targetDay != null) {
-                try {
-                    val d = LocalDate.parse(targetDay, isoFormat)
-                    d.format(shortMonthFormat).replaceFirstChar { it.uppercase() }
-                } catch (_: Exception) { "" }
-            } else ""
-
-            if (monthStr.isNotEmpty()) {
-                if (weekIndex == 0) {
-                    positions.add(Pair(monthStr, 0))
-                    lastMonth = monthStr
-                    lastAddedWeek = 0
-                } else if (monthStr != lastMonth && (weekIndex - lastAddedWeek) >= 3) {
-                    positions.add(Pair(monthStr, weekIndex))
-                    lastMonth = monthStr
-                    lastAddedWeek = weekIndex
-                }
-            }
-        }
-        return positions
     }
 
     /**

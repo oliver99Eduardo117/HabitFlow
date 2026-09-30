@@ -102,8 +102,23 @@ class DashboardWidget : GlanceAppWidget() {
 
             val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
 
+            val pending = todayHabits.filter { !it.isCompletedToday }
+            val barDp = if (totalHabits > 0) 24f else 0f
+            val minHeatmapCardDp = 145f
+            val rowsAvailableDp = size.height.value - 28f - 20f - barDp - 12f - minHeatmapCardDp
+            val maxRows = (rowsAvailableDp / 40f).toInt().coerceIn(0, 4)
+            val visible = if (pending.size > maxRows) (maxRows - 1).coerceAtLeast(0) else pending.size
+            val middleDp = when {
+                totalHabits == 0 || allDone -> 120f
+                else -> visible * 40f + if (pending.size > visible) 28f else 0f
+            }
+
             val cardInnerDp = size.width.value - 28f - 20f
-            val weeks = ((cardInnerDp + 2f) / 13f).toInt().coerceIn(8, 26)
+            val heatmapCardDp = (size.height.value - 28f - 20f - barDp - middleDp - 12f)
+                .coerceAtLeast(minHeatmapCardDp)
+            val gridH = heatmapCardDp - 20f - 16f - 6f
+            val cellDp = ((gridH - 14f - 12f) / 7f).toInt().toFloat().coerceIn(9f, 16f)
+            val weeks = ((cardInnerDp + 2f) / (cellDp + 2f)).toInt().coerceIn(6, 26)
             val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
             val monthPositions = WidgetDates.monthPositions(dateMatrix)
 
@@ -120,8 +135,8 @@ class DashboardWidget : GlanceAppWidget() {
             val ratioMatrix: List<List<Float>> = dateMatrix.map { week ->
                 week.map { dateStr ->
                     when {
-                        dateStr == today -> progressRatio
-                        dateStr > today -> 0f
+                        dateStr == today -> if (totalHabits > 0) progressRatio else -1f
+                        dateStr > today -> -1f
                         else -> {
                             val dayOfWeek = DateUtils.getDayOfWeek(dateStr)
                             val dayLogsByHabit = (allLogsByDate[dateStr] ?: emptyList()).associateBy { it.habitId }
@@ -131,7 +146,7 @@ class DashboardWidget : GlanceAppWidget() {
                                         (habit.frequencyDays.isEmpty() || dayOfWeek in habit.frequencyDays))
                             }
                             if (eligible.isEmpty()) {
-                                0f
+                                -1f
                             } else {
                                 val done = eligible.count { habit ->
                                     (dayLogsByHabit[habit.id]?.value ?: 0f) >= habit.targetValue
@@ -152,17 +167,22 @@ class DashboardWidget : GlanceAppWidget() {
                 found
             }
 
-            val heatmapBitmap: Bitmap = remember(ratioMatrix, weeks, density) {
+            val heatmapBitmap: Bitmap = remember(ratioMatrix, weeks, cellDp, density) {
                 WidgetBitmapUtils.createHeatmapGridBitmap(
                     columns = weeks,
                     monthPositions = monthPositions,
-                    cellSizePx = 11f * density,
+                    cellSizePx = cellDp * density,
                     gapPx = 2f * density,
                     monthLabelTextPx = 10f * density,
                     highlightCell = todayCell
                 ) { col, row ->
                     val date = dateMatrix.getOrNull(col)?.getOrNull(row) ?: return@createHeatmapGridBitmap 0
-                    if (date > today) 0 else WidgetColors.getHeatmapColorInt(ratioMatrix[col][row])
+                    val ratio = ratioMatrix[col][row]
+                    when {
+                        date > today -> 0
+                        ratio < 0f -> 0x55334155
+                        else -> WidgetColors.getHeatmapColorInt(ratio)
+                    }
                 }
             }
 
@@ -293,12 +313,6 @@ class DashboardWidget : GlanceAppWidget() {
                             }
                         }
                         else -> {
-                            val pending = todayHabits.filter { !it.isCompletedToday }
-                            val heatmapCardDp = 145f
-                            val availableDp = size.height.value - 28f - 20f - 24f - 12f - heatmapCardDp
-                            val maxRows = (availableDp / 40f).toInt().coerceIn(0, 4)
-                            val visible = if (pending.size > maxRows) (maxRows - 1).coerceAtLeast(0) else pending.size
-
                             Column(modifier = GlanceModifier.fillMaxWidth()) {
                                 pending.take(visible).forEach { item ->
                                     HabitWidgetRow(
