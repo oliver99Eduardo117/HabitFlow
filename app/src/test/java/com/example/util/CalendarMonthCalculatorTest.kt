@@ -153,4 +153,13 @@ class CalendarMonthCalculatorTest {
         assertEquals(LocalDate.of(2026, 9, 5), result.dayOf(LocalDate.of(2026, 9, 5))?.date)
         assertEquals(null, result.dayOf(LocalDate.of(2026, 10, 1)))
     }
+
+    @Test
+    fun `pending habits of today do not lower the month percent`() {
+        val habits = listOf(habit(1), habit(2))
+        val logs = (1..28).flatMap { listOf(log(1, it), log(2, it)) } + log(1, 29)
+        val result = build(habits, logs)
+        assertEquals(100, result.completionPercent) // 57 de 57: el habito 2 de hoy sigue abierto
+        assertEquals(CalendarDayKind.PARTIAL, result.days[28].kind)
+    }
 }

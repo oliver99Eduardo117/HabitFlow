@@ -123,7 +123,8 @@ object CalendarMonthCalculator {
 
         val days = (1..month.lengthOfMonth()).map { summarize(month.atDay(it)) }
         val elapsed = days.filter { !it.date.isAfter(today) }
-        val scheduledSum = elapsed.sumOf { it.scheduledCount }
+        // Hoy solo suma lo ya cumplido: lo pendiente no baja el porcentaje mientras el dia siga abierto
+        val scheduledSum = elapsed.sumOf { if (it.isToday) it.completedCount else it.scheduledCount }
         val completedSum = elapsed.sumOf { it.completedCount }
         val completionPercent = if (scheduledSum == 0) 0 else (completedSum * 100f / scheduledSum).roundToInt()
 

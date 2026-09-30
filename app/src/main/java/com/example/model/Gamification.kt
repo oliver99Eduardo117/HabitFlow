@@ -143,7 +143,7 @@ object GamificationConfig {
             title = "Leyenda Suprema HabitFlow",
             rank = "Maestro Legendario",
             minXp = 3600,
-            maxXp = 5000,
+            maxXp = 6000,
             iconName = "stars",
             perk = "Consistencia legendaria de por vida",
             primaryColorHex = "#10B981",
@@ -191,7 +191,7 @@ object GamificationConfig {
             minXp = tier.minXp
             maxXp = tier.maxXp
         } else {
-            minXp = 5000 + (level - 11) * 1000
+            minXp = 5000 + (level - 10) * 1000
             maxXp = minXp + 1000
         }
 
@@ -202,7 +202,7 @@ object GamificationConfig {
 
         return LevelProgress(
             currentLevel = level,
-            levelTitle = if (level > 10) "Leyenda Suprema Lv.$level" else tier.title,
+            levelTitle = if (level > 10) "Leyenda Suprema" else tier.title,
             rankName = if (level > 10) "Maestro Legendario+" else tier.rank,
             currentXp = xp,
             minXpForLevel = minXp,

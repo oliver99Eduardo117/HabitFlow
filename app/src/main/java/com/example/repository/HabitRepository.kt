@@ -429,18 +429,30 @@ class HabitRepository(
             }
         )
 
-        if (isCompleted && !wasCompleted) {
-            val allLogs = habitLogDao.getAllLogs().first()
-            val datesWithCompletion = allLogs.filter { it.value > 0f }.map { it.date }.toSet()
-            val (_, bestStreak) = DateUtils.calculateStreak(datesWithCompletion)
+        if (isCompleted != wasCompleted) {
+            // Mejor racha real: por habito, solo dias que llegaron a la meta y respetando su frecuencia.
+            // Tambien se recalcula al desmarcar, para que un toque por error no deje un record inflado.
             updated = updated.copy(
-                bestStreakAllTime = maxOf(stats.bestStreakAllTime, bestStreak),
-                lastActiveDate = DateUtils.getTodayDateString()
+                bestStreakAllTime = bestHabitStreak(),
+                lastActiveDate = if (isCompleted) DateUtils.getTodayDateString() else updated.lastActiveDate
             )
         }
 
         if (delta > 0) checkAndSaveGamification(updated) else userStatsDao.insertOrUpdate(updated)
         return maxOf(0, delta)
+    }
+
+    /** La racha mas larga de cualquier habito (activo o archivado), contando solo dias que llegaron a la meta. */
+    private suspend fun bestHabitStreak(): Int {
+        val logsByHabit = habitLogDao.getAllLogs().first().groupBy { it.habitId }
+        return habitDao.getAllHabits().first().maxOfOrNull { habit ->
+            val target = if (habit.targetValue > 0f) habit.targetValue else 1f
+            val completedDates = logsByHabit[habit.id].orEmpty()
+                .filter { it.value >= target }
+                .map { it.date }
+                .toSet()
+            DateUtils.calculateStreak(completedDates, habit.frequencyDays).second
+        } ?: 0
     }
 
     private suspend fun checkAndSaveGamification(stats: UserStats) {
@@ -524,10 +536,14 @@ class HabitRepository(
     /**
      * AI Routine Analysis & Insights (Universal OpenAI Chat Completions endpoint or Honest Local Fallback)
      */
-     suspend fun generateSmartInsights(): List<String> = withContext(Dispatchers.IO) {
+     suspend fun generateSmartInsights(fallbackToLocal: Boolean = true): List<String> = withContext(Dispatchers.IO) {
         val logs = habitLogDao.getAllLogs().first()
         val habits = habitDao.getActiveHabits().first()
         val stats = userStatsDao.getUserStats() ?: UserStats()
+
+        // Sin IA, o si la IA falla: frases locales, o nada si quien llama solo quiere la respuesta de la IA
+        fun fallback(): List<String> =
+            if (fallbackToLocal) buildHonestLocalInsights(habits, logs, stats) else emptyList()
 
         val aiPrefs = AiProviderPreferences.getInstance(context)
         val isAiEnabled = aiPrefs.isEnabled.value
@@ -536,7 +552,7 @@ class HabitRepository(
         val modelName = aiPrefs.modelName.value
 
         if (!isAiEnabled || baseUrl.isBlank() || modelName.isBlank()) {
-            return@withContext buildHonestLocalInsights(habits, logs, stats)
+            return@withContext fallback()
         }
 
         // Build data summary for LLM prompt
@@ -593,11 +609,11 @@ class HabitRepository(
                 if (lines.isNotEmpty()) {
                     lines
                 } else {
-                    buildHonestLocalInsights(habits, logs, stats)
+                    fallback()
                 }
             },
             onFailure = {
-                buildHonestLocalInsights(habits, logs, stats)
+                fallback()
             }
         )
     }
@@ -615,7 +631,9 @@ class HabitRepository(
         }
 
         val insights = mutableListOf<String>()
-        val completedLogs = logs.filter { it.value > 0f }
+        // Solo cuentan los registros que llegaron a la meta de su habito
+        val targetById = habits.associate { it.id to it.targetValue }
+        val completedLogs = logs.filter { log -> targetById[log.habitId]?.let { log.value >= it } == true }
         insights.add("Has registrado ${completedLogs.size} check-ins reales en total con una tendencia de progreso constante.")
 
         val completionsByHabit = completedLogs.groupBy { it.habitId }

@@ -102,6 +102,30 @@ fun SettingsScreen(
         }
     }
 
+    // Exportar registros a CSV (antes estaba en Progreso > Análisis). El BOM hace que Excel lea bien los acentos.
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    isExporting = true
+                    val csvContent = viewModel.getExportCsv()
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                        outputStream.write(csvContent.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                    }
+                    Toast.makeText(context, "Registros exportados a CSV", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Error al guardar archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isExporting = false
+                }
+            }
+        }
+    }
+
     // File Picker for Restore (Import JSON)
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -254,6 +278,28 @@ fun SettingsScreen(
                         icon = Icons.Default.Archive,
                         testTag = "settings_archived_habits",
                         onClick = onOpenArchivedHabits
+                    )
+
+                    SettingsActionRow(
+                        title = "Exportar registros a CSV",
+                        subtitle = "Todos tus registros, para Excel o Google Sheets",
+                        icon = Icons.Default.TableChart,
+                        testTag = "settings_export_csv",
+                        onClick = {
+                            if (!isExporting) {
+                                val fileName = "habitflow_registros_${DateUtils.getTodayDateString().replace("-", "")}.csv"
+                                createCsvLauncher.launch(fileName)
+                            }
+                        }
+                    )
+
+                    SettingsSwitchRow(
+                        title = "Modo Hardcore",
+                        subtitle = "Ganas 25% más XP en todo. No cambia rachas ni metas.",
+                        icon = Icons.Default.Bolt,
+                        checked = uiState.userStats.isHardcoreMode,
+                        testTag = "settings_hardcore_mode",
+                        onCheckedChange = { viewModel.toggleHardcoreMode(it) }
                     )
 
                     SettingsActionRow(
@@ -911,6 +957,62 @@ private fun SettingsActionRow(
                 modifier = Modifier.size(18.dp)
             )
         }
+    }
+}
+
+/** Fila de ajuste con interruptor. Toda la fila responde al toque, no solo el switch. */
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    checked: Boolean,
+    testTag: String,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onCheckedChange(!checked) }
+            .testTag(testTag)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

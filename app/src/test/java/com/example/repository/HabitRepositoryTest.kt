@@ -321,4 +321,25 @@ class HabitRepositoryTest {
         repository.addTimerProgress(meditation, today, 10f, "Sesión de enfoque: 10 min")
         assertEquals("Sesión de enfoque: 10 min", database.habitLogDao().getLogForHabitAndDate(meditation, today)?.notes)
     }
+
+    @Test
+    fun `best streak only counts days that reach the goal of the habit`() = runTest {
+        val habitId = repository.saveHabit(
+            Habit(title = "Beber agua", category = "Salud", unit = "vasos", targetValue = 8f)
+        )
+        // Tres dias con 5 de 8 vasos: hay registro, pero no se llego a la meta
+        for (i in 1..3) {
+            database.habitLogDao().insertOrUpdateLog(
+                HabitLog(habitId = habitId, date = DateUtils.getDaysAgoDateString(i), value = 5f)
+            )
+        }
+        repository.toggleHabitCompletion(habitId, DateUtils.getTodayDateString())
+
+        val stats = database.userStatsDao().getUserStats()
+        assertEquals(1, stats?.bestStreakAllTime)
+        assertFalse(
+            "streak_3 no se gana con dias parciales",
+            stats?.unlockedBadgeIds?.contains("streak_3") == true
+        )
+    }
 }

@@ -715,25 +715,37 @@ fun HabitFlowApp(
                 }
 
                 NavigationTab.PROGRESS -> {
+                    val progress by viewModel.progress.collectAsStateWithLifecycle()
+                    val aiConfigured by viewModel.aiConfigured.collectAsStateWithLifecycle()
                     ProgressScreen(
                         activeTab = uiState.activeProgressTab,
                         onTabSelected = { viewModel.setProgressTab(it) },
-                        habits = uiState.habits.map { it.habit },
-                        allLogs = uiState.allLogs,
-                        insights = uiState.insights,
-                        isLoadingInsights = uiState.isLoadingInsights,
-                        themeMode = uiState.themeMode,
-                        dynamicColor = uiState.dynamicColor,
-                        onSelectThemeMode = { viewModel.setThemeMode(it) },
-                        onToggleDynamicColor = { viewModel.setDynamicColor(it) },
-                        onExportJson = { viewModel.getExportJson() },
-                        onExportCsv = { viewModel.getExportCsv() },
-                        onSelectDate = { dateStr ->
-                            viewModel.setSelectedDate(dateStr)
-                            viewModel.setNavigationTab(NavigationTab.TODAY)
+                        resumen = {
+                            ResumenSection(
+                                summary = progress,
+                                aiInsights = uiState.insights,
+                                isLoadingAi = uiState.isLoadingInsights,
+                                aiConfigured = aiConfigured,
+                                onAskAi = { viewModel.refreshInsights() },
+                                onOpenAiSettings = { showAiSettingsDialog = true },
+                                onOpenHabit = { habitId -> viewModel.openConstancy(habitId) },
+                                onOpenAchievements = { viewModel.setProgressTab(ProgressTab.ACHIEVEMENTS) }
+                            )
                         },
-                        userStats = uiState.userStats,
-                        onToggleHardcoreMode = { viewModel.toggleHardcoreMode(it) }
+                        constancia = {
+                            ConstanciaSection(
+                                summary = progress,
+                                selectedHabitId = uiState.constancyHabitId,
+                                onSelectHabit = { habitId -> viewModel.setConstancyHabit(habitId) },
+                                onOpenDayInToday = { dateStr ->
+                                    viewModel.setSelectedDate(dateStr)
+                                    viewModel.setNavigationTab(NavigationTab.TODAY)
+                                }
+                            )
+                        },
+                        logros = {
+                            LogrosSection(summary = progress)
+                        }
                     )
                 }
 

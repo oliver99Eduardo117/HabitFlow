@@ -1,6 +1,7 @@
 package com.example.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GamificationConfigTest {
@@ -82,5 +83,39 @@ class GamificationConfigTest {
         assertEquals(11, GamificationConfig.calculateLevel(6000))
         assertEquals(12, GamificationConfig.calculateLevel(7500))
         assertEquals(15, GamificationConfig.calculateLevel(10000))
+    }
+
+    @Test
+    fun `getProgress uses the same ranges as calculateLevel`() {
+        // El nivel 10 va de 3,600 a 5,999 XP; desde ahi, 1,000 XP por nivel
+        GamificationConfig.getProgress(5000).let {
+            assertEquals(10, it.currentLevel)
+            assertEquals(3600, it.minXpForLevel)
+            assertEquals(6000, it.maxXpForLevel)
+            assertEquals(1000, it.xpNeededForNextLevel)
+        }
+        GamificationConfig.getProgress(6000).let {
+            assertEquals(11, it.currentLevel)
+            assertEquals(6000, it.minXpForLevel)
+            assertEquals(7000, it.maxXpForLevel)
+            assertEquals(0f, it.progressFraction, 0.0001f)
+        }
+        GamificationConfig.getProgress(10725).let {
+            assertEquals(15, it.currentLevel)
+            assertEquals(725, it.xpInCurrentLevel)
+            assertEquals(275, it.xpNeededForNextLevel)
+            assertEquals(0.725f, it.progressFraction, 0.0001f)
+        }
+        for (xp in 0..20000 step 25) {
+            val progress = GamificationConfig.getProgress(xp)
+            assertEquals(GamificationConfig.calculateLevel(xp), progress.currentLevel)
+            assertTrue("$xp XP fuera de su rango", xp >= progress.minXpForLevel && xp < progress.maxXpForLevel)
+        }
+    }
+
+    @Test
+    fun `level title does not repeat the level number`() {
+        assertEquals("Leyenda Suprema", GamificationConfig.getProgress(10725).levelTitle)
+        assertEquals("Leyenda Suprema HabitFlow", GamificationConfig.getProgress(4000).levelTitle)
     }
 }

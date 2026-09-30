@@ -11,9 +11,12 @@ import com.example.model.*
 import com.example.notification.NotificationHelper
 import com.example.repository.HabitRepository
 import com.example.service.TimerManager
+import com.example.util.AiProviderPreferences
 import com.example.util.CalendarMonthCalculator
 import com.example.util.CalendarMonthSummary
 import com.example.util.DateUtils
+import com.example.util.ProgressCalculator
+import com.example.util.ProgressSummary
 import com.example.util.ThemePreferences
 import com.example.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +62,8 @@ data class HabitUiState(
     val layoutMode: ViewLayoutMode = ViewLayoutMode.LIST,
     val activeTab: NavigationTab = NavigationTab.TODAY,
     val activeProgressTab: ProgressTab = ProgressTab.ANALYTICS,
+    /** Habito elegido en Progreso > Constancia (null = Todos). */
+    val constancyHabitId: Long? = null,
     val userStats: UserStats = UserStats(),
     val allLogs: List<HabitLog> = emptyList(),
     val activeTimer: ActiveTimerState = ActiveTimerState(),
@@ -119,6 +124,38 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         .map { CalendarMonthCalculator.build(it.habits, it.logs, it.month, it.today) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Entradas de Progreso; se comparan para no recalcular en cada tic del temporizador. */
+    private data class ProgressInputs(
+        val habits: List<Habit>,
+        val archived: List<Habit>,
+        val logs: List<HabitLog>,
+        val stats: UserStats,
+        val today: LocalDate
+    )
+
+    /** Todo lo que muestra la pestana Progreso (Resumen, Constancia y Logros), calculado fuera del hilo principal. */
+    val progress: StateFlow<ProgressSummary?> = _uiState
+        .map { state ->
+            ProgressInputs(
+                habits = state.habits.map { it.habit },
+                archived = state.archivedHabits,
+                logs = state.allLogs,
+                stats = state.userStats,
+                today = parseIsoDateOr(state.today, LocalDate.now())
+            )
+        }
+        .distinctUntilChanged()
+        .map { ProgressCalculator.build(it.habits, it.archived, it.logs, it.stats, it.today) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val aiPrefs = AiProviderPreferences.getInstance(application)
+
+    /** true si hay una IA configurada. Sin ella, Resumen ofrece abrir su configuracion. */
+    val aiConfigured: StateFlow<Boolean> = combine(aiPrefs.isEnabled, aiPrefs.baseUrl, aiPrefs.modelName) { enabled, url, model ->
+        enabled && url.isNotBlank() && model.isNotBlank()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         val db = AppDatabase.getInstance(application)
@@ -228,9 +265,6 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                 refreshDayIfChanged()
             }
         }
-
-        // Load AI Insights
-        refreshInsights()
     }
 
     private suspend fun preloadDefaultHabits() {
@@ -338,16 +372,20 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun setNavigationTab(tab: NavigationTab) {
         if (tab == NavigationTab.TIMER) restoreStandaloneIfIdle()
         _uiState.update { it.copy(activeTab = tab) }
-        if (tab == NavigationTab.PROGRESS && _uiState.value.activeProgressTab == ProgressTab.ANALYTICS) {
-            refreshInsights()
-        }
     }
 
     fun setProgressTab(tab: ProgressTab) {
         _uiState.update { it.copy(activeProgressTab = tab) }
-        if (tab == ProgressTab.ANALYTICS) {
-            refreshInsights()
-        }
+    }
+
+    /** Habito elegido en Progreso > Constancia (null = Todos). */
+    fun setConstancyHabit(habitId: Long?) {
+        _uiState.update { it.copy(constancyHabitId = habitId) }
+    }
+
+    /** Abre Progreso > Constancia con un habito ya elegido. Lo usa Resumen al tocar un habito. */
+    fun openConstancy(habitId: Long?) {
+        _uiState.update { it.copy(constancyHabitId = habitId, activeProgressTab = ProgressTab.HEATMAP) }
     }
 
     fun handleWidgetDeepLink(tabName: String?) {
@@ -556,17 +594,25 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleHardcoreMode(enabled: Boolean) {
         viewModelScope.launch {
             repository.updateHardcoreMode(enabled)
-            val msg = if (enabled) "Modo Hardcore activado: ¡Cero tolerancia a fallar!" else "Modo estándar restaurado"
+            val msg = if (enabled) "Modo Hardcore activado: ganas 25% más XP" else "Modo Hardcore desactivado"
             _uiState.update { it.copy(snackbarMessage = msg) }
         }
     }
 
+    /** Pide a la IA un resumen. Solo se llama desde el boton de Resumen; ya no se llama sola. */
     fun refreshInsights() {
+        if (_uiState.value.isLoadingInsights) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingInsights = true) }
             try {
-                val smartInsights = repository.generateSmartInsights()
-                _uiState.update { it.copy(insights = smartInsights) }
+                val aiInsights = repository.generateSmartInsights(fallbackToLocal = false)
+                _uiState.update {
+                    if (aiInsights.isEmpty()) {
+                        it.copy(snackbarMessage = "La IA no respondió. Revisa su configuración e inténtalo de nuevo.")
+                    } else {
+                        it.copy(insights = aiInsights)
+                    }
+                }
             } finally {
                 _uiState.update { it.copy(isLoadingInsights = false) }
             }
