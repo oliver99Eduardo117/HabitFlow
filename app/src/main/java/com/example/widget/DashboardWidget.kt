@@ -22,6 +22,8 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -102,23 +104,12 @@ class DashboardWidget : GlanceAppWidget() {
 
             val topStreakHabit = habitsWithStats.maxByOrNull { it.currentStreak }
 
-            val pending = todayHabits.filter { !it.isCompletedToday }
-            val barDp = if (totalHabits > 0) 24f else 0f
-            val minHeatmapCardDp = 145f
-            val rowsAvailableDp = size.height.value - 28f - 20f - barDp - 12f - minHeatmapCardDp
-            val maxRows = (rowsAvailableDp / 40f).toInt().coerceIn(0, 4)
-            val visible = if (pending.size > maxRows) (maxRows - 1).coerceAtLeast(0) else pending.size
-            val middleDp = when {
-                totalHabits == 0 || allDone -> 120f
-                else -> visible * 40f + if (pending.size > visible) 28f else 0f
-            }
-
-            val cardInnerDp = size.width.value - 28f - 20f
-            val heatmapCardDp = (size.height.value - 28f - 20f - barDp - middleDp - 12f)
-                .coerceAtLeast(minHeatmapCardDp)
-            val gridH = heatmapCardDp - 20f - 16f - 6f
-            val cellDp = ((gridH - 14f - 12f) / 7f).toInt().toFloat().coerceIn(9f, 16f)
-            val weeks = ((cardInnerDp + 2f) / (cellDp + 2f)).toInt().coerceIn(6, 26)
+            // Pendientes primero, luego hechos; cada grupo conserva el orden original.
+            val listItems = todayHabits.filter { !it.isCompletedToday } + todayHabits.filter { it.isCompletedToday }
+            val cellDp = 12f
+            val weeks = ((size.width.value - 28f - 20f + 2f) / (cellDp + 2f)).toInt().coerceIn(8, 26)
+            val gridHeightDp = 14f + 7f * cellDp + 12f        // meses + 7 filas + 6 separaciones = 110dp
+            val showHeatmap = size.height.value >= 300f        // en widgets muy bajos solo se ve la lista
             val dateMatrix = DateUtils.getHeatmapDateMatrix(weeks = weeks)
             val monthPositions = WidgetDates.monthPositions(dateMatrix)
 
@@ -263,7 +254,7 @@ class DashboardWidget : GlanceAppWidget() {
                             Box(
                                 modifier = GlanceModifier
                                     .fillMaxWidth()
-                                    .height(120.dp)
+                                    .defaultWeight()
                             ) {
                                 NoHabitsTodayState(habitsWithStats)
                             }
@@ -272,7 +263,7 @@ class DashboardWidget : GlanceAppWidget() {
                             Column(
                                 modifier = GlanceModifier
                                     .fillMaxWidth()
-                                    .height(120.dp),
+                                    .defaultWeight(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -313,8 +304,8 @@ class DashboardWidget : GlanceAppWidget() {
                             }
                         }
                         else -> {
-                            Column(modifier = GlanceModifier.fillMaxWidth()) {
-                                pending.take(visible).forEach { item ->
+                            LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                                items(listItems, itemId = { it.habit.id }) { item ->
                                     HabitWidgetRow(
                                         item = item,
                                         widgetType = "dashboard",
@@ -322,98 +313,78 @@ class DashboardWidget : GlanceAppWidget() {
                                         rowHeight = 40.dp
                                     )
                                 }
-                                if (pending.size > visible) {
-                                    Row(
-                                        modifier = GlanceModifier
-                                            .fillMaxWidth()
-                                            .height(28.dp)
-                                            .clickable(actionStartActivity(todayTabIntent)),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = if (maxRows == 0) {
-                                                "${pending.size} pendientes"
-                                            } else {
-                                                "+${pending.size - visible} más en la app"
-                                            },
-                                            style = TextStyle(
-                                                color = ColorProvider(WidgetColors.TextSecondary),
-                                                fontSize = 12.sp
-                                            )
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
 
-                    // 4. Espaciador
-                    Spacer(modifier = GlanceModifier.height(12.dp))
+                    if (showHeatmap) {
+                        // 4. Espaciador
+                        Spacer(modifier = GlanceModifier.height(12.dp))
 
-                    // 5. Tarjeta del mapa
-                    Box(
-                        modifier = GlanceModifier
-                            .fillMaxWidth()
-                            .defaultWeight()
-                            .cornerRadius(WidgetDimens.CardRadius)
-                            .background(ColorProvider(WidgetColors.Card))
-                            .padding(10.dp)
-                            .clickable(actionStartActivity(analyticsTabIntent))
-                    ) {
-                        Column(modifier = GlanceModifier.fillMaxSize()) {
-                            Row(
-                                modifier = GlanceModifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "$weeks semanas",
-                                    style = TextStyle(
-                                        color = ColorProvider(WidgetColors.TextPrimary),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
+                        // 5. Tarjeta del mapa
+                        Box(
+                            modifier = GlanceModifier
+                                .fillMaxWidth()
+                                .cornerRadius(WidgetDimens.CardRadius)
+                                .background(ColorProvider(WidgetColors.Card))
+                                .padding(10.dp)
+                                .clickable(actionStartActivity(analyticsTabIntent))
+                        ) {
+                            Column(modifier = GlanceModifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = GlanceModifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "$weeks semanas",
+                                        style = TextStyle(
+                                            color = ColorProvider(WidgetColors.TextPrimary),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
                                     )
-                                )
-                                Spacer(modifier = GlanceModifier.defaultWeight())
-                                Text(
-                                    text = "Menos",
-                                    modifier = GlanceModifier.padding(end = 4.dp),
-                                    style = TextStyle(
-                                        color = ColorProvider(WidgetColors.TextSecondary),
-                                        fontSize = 10.sp
+                                    Spacer(modifier = GlanceModifier.defaultWeight())
+                                    Text(
+                                        text = "Menos",
+                                        modifier = GlanceModifier.padding(end = 4.dp),
+                                        style = TextStyle(
+                                            color = ColorProvider(WidgetColors.TextSecondary),
+                                            fontSize = 10.sp
+                                        )
                                     )
-                                )
-                                listOf(0f, 0.3f, 0.5f, 0.8f, 1f).forEach { level ->
-                                    Box(modifier = GlanceModifier.padding(end = 2.dp)) {
-                                        Box(
-                                            modifier = GlanceModifier
-                                                .size(8.dp)
-                                                .cornerRadius(2.dp)
-                                                .background(
-                                                    ColorProvider(
-                                                        Color(WidgetColors.getHeatmapColorInt(level))
+                                    listOf(0f, 0.3f, 0.5f, 0.8f, 1f).forEach { level ->
+                                        Box(modifier = GlanceModifier.padding(end = 2.dp)) {
+                                            Box(
+                                                modifier = GlanceModifier
+                                                    .size(8.dp)
+                                                    .cornerRadius(2.dp)
+                                                    .background(
+                                                        ColorProvider(
+                                                            Color(WidgetColors.getHeatmapColorInt(level))
+                                                        )
                                                     )
-                                                )
-                                        ) {}
+                                            ) {}
+                                        }
                                     }
-                                }
-                                Text(
-                                    text = "Más",
-                                    modifier = GlanceModifier.padding(start = 2.dp),
-                                    style = TextStyle(
-                                        color = ColorProvider(WidgetColors.TextSecondary),
-                                        fontSize = 10.sp
+                                    Text(
+                                        text = "Más",
+                                        modifier = GlanceModifier.padding(start = 2.dp),
+                                        style = TextStyle(
+                                            color = ColorProvider(WidgetColors.TextSecondary),
+                                            fontSize = 10.sp
+                                        )
                                     )
+                                }
+                                Image(
+                                    provider = ImageProvider(heatmapBitmap),
+                                    contentDescription = "Constancia de las últimas $weeks semanas",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = GlanceModifier
+                                        .fillMaxWidth()
+                                        .height(gridHeightDp.dp)
+                                        .padding(top = 6.dp)
                                 )
                             }
-                            Image(
-                                provider = ImageProvider(heatmapBitmap),
-                                contentDescription = "Constancia de las últimas $weeks semanas",
-                                contentScale = ContentScale.Fit,
-                                modifier = GlanceModifier
-                                    .fillMaxWidth()
-                                    .defaultWeight()
-                                    .padding(top = 6.dp)
-                            )
                         }
                     }
                 }
