@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpetas que FileProvider puede compartir. Solo la de copias para enviar a otra app. -->
+<paths>
+    <cache-path
+        name="copias"
+        path="copias/" />
+</paths>

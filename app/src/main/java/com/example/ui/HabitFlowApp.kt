@@ -85,7 +85,6 @@ fun HabitFlowApp(
     var showArchivedHabitsDialog by remember { mutableStateOf(false) }
     var selectedDetailHabit by remember { mutableStateOf<HabitWithStats?>(null) }
     var quickSheetHabitId by remember { mutableStateOf<Long?>(null) }
-    var showThemeSwitcherDialog by remember { mutableStateOf(false) }
     var showAiSettingsDialog by remember { mutableStateOf(false) }
     var showLayoutDropdown by remember { mutableStateOf(false) }
     var activeStreakMilestone by remember { mutableStateOf<com.example.model.StreakMilestoneEvent?>(null) }
@@ -753,7 +752,6 @@ fun HabitFlowApp(
                     SettingsScreen(
                         uiState = uiState,
                         viewModel = viewModel,
-                        onOpenThemeDialog = { showThemeSwitcherDialog = true },
                         onOpenAiSettings = { showAiSettingsDialog = true },
                         onOpenManageCategories = { showManageCategoriesDialog = true },
                         onOpenArchivedHabits = { showArchivedHabitsDialog = true }
@@ -966,21 +964,6 @@ fun HabitFlowApp(
             dismissButton = {
                 TextButton(onClick = { pendingHabitFocus = null }) { Text("Cancelar") }
             }
-        )
-    }
-
-    // Dynamic Theme Switcher Dialog
-    if (showThemeSwitcherDialog) {
-        ThemeSwitcherDialog(
-            currentThemeMode = uiState.themeMode,
-            isDynamicColor = uiState.dynamicColor,
-            onSelectThemeMode = { mode ->
-                viewModel.setThemeMode(mode)
-            },
-            onToggleDynamicColor = { dyn ->
-                viewModel.setDynamicColor(dyn)
-            },
-            onDismiss = { showThemeSwitcherDialog = false }
         )
     }
 

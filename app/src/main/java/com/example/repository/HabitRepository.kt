@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /** Elimina emojis y selectores de variación de textos generados por IA. */
 private val EMOJI_REGEX = Regex(
@@ -780,6 +781,7 @@ class HabitRepository(
     fun parseBackupPreview(jsonString: String): Result<RestoreSummary> {
         return try {
             val root = JSONObject(jsonString)
+            requireHabitFlowBackup(root)
             val habitsArray = root.optJSONArray("habits") ?: JSONArray()
             val logsArray = root.optJSONArray("logs") ?: JSONArray()
             val subTasksArray = root.optJSONArray("subTasks") ?: JSONArray()
@@ -789,7 +791,8 @@ class HabitRepository(
             val xp = statsObj?.optInt("xp", 0) ?: 0
             val level = statsObj?.optInt("level", 1) ?: 1
             val isHardcore = statsObj?.optBoolean("isHardcoreMode", false) ?: false
-            val exportedAt = root.optLong("exportedAt", System.currentTimeMillis())
+            // 0 = fecha desconocida. Antes se usaba la hora actual y la copia parecia de hoy.
+            val exportedAt = root.optLong("exportedAt", 0L)
 
             Result.success(
                 RestoreSummary(
@@ -814,6 +817,7 @@ class HabitRepository(
     suspend fun restoreDataJson(jsonString: String): Result<RestoreSummary> = withContext(Dispatchers.IO) {
         try {
             val root = JSONObject(jsonString)
+            requireHabitFlowBackup(root)
             val habitsArray = root.optJSONArray("habits") ?: JSONArray()
             val logsArray = root.optJSONArray("logs") ?: JSONArray()
             val subTasksArray = root.optJSONArray("subTasks") ?: JSONArray()
@@ -1003,7 +1007,7 @@ class HabitRepository(
                 categoriesCount = if (restoredCategories.isNotEmpty()) restoredCategories.size else DefaultCategories.size,
                 userLevel = restoredStats.level,
                 userXp = restoredStats.xp,
-                exportedAt = root.optLong("exportedAt", System.currentTimeMillis()),
+                exportedAt = root.optLong("exportedAt", 0L),
                 isHardcoreMode = restoredStats.isHardcoreMode
             )
 
@@ -1011,6 +1015,73 @@ class HabitRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Solo acepta copias de HabitFlow. Sin esta revision cualquier JSON, por ejemplo "{}",
+     * pasaba como una copia con 0 habitos y al recuperarla se borraba todo.
+     */
+    private fun requireHabitFlowBackup(root: JSONObject) {
+        val hasHabits = root.optJSONArray("habits") != null
+        val looksLikeHabitFlow = root.optString("appName") == "HabitFlow" || root.optJSONArray("logs") != null
+        if (!hasHabits || !looksLikeHabitFlow) {
+            throw IllegalArgumentException(NOT_A_BACKUP_MESSAGE)
+        }
+    }
+
+    /** Lo que hay ahora en el telefono, contado igual que exportDataJson, para compararlo con una copia. */
+    suspend fun currentDataSummary(): RestoreSummary = withContext(Dispatchers.IO) {
+        val stats = userStatsDao.getUserStats() ?: UserStats()
+        RestoreSummary(
+            habitsCount = habitDao.getAllHabits().first().size,
+            logsCount = habitLogDao.getAllLogs().first().size,
+            subTasksCount = subTaskDao.getAllSubTasks().first().size,
+            categoriesCount = categoryDao.getAllCategories().first().size,
+            userLevel = stats.level,
+            userXp = stats.xp,
+            exportedAt = System.currentTimeMillis(),
+            isHardcoreMode = stats.isHardcoreMode
+        )
+    }
+
+    /**
+     * Recupera una copia guardando antes lo que hay ahora en un archivo interno (no sale del telefono).
+     * Si la copia no es valida o algo falla, la base no cambia y se conserva la copia interna anterior.
+     */
+    suspend fun restoreWithSafetySnapshot(jsonString: String): Result<RestoreSummary> = withContext(Dispatchers.IO) {
+        parseBackupPreview(jsonString).exceptionOrNull()?.let { return@withContext Result.failure(it) }
+
+        val pending = File(context.filesDir, SAFETY_SNAPSHOT_PENDING)
+        try {
+            pending.writeText(exportDataJson())
+        } catch (e: Exception) {
+            pending.delete()
+            return@withContext Result.failure(
+                IllegalStateException("No se pudo guardar una copia de lo actual. No se cambió nada.", e)
+            )
+        }
+
+        val result = restoreDataJson(jsonString)
+        if (result.isSuccess) {
+            val target = File(context.filesDir, SAFETY_SNAPSHOT_FILE)
+            if (!pending.renameTo(target)) {
+                pending.copyTo(target, overwrite = true)
+                pending.delete()
+            }
+        } else {
+            pending.delete()
+        }
+        result
+    }
+
+    /** Hora de la copia interna guardada antes de la ultima recuperacion; null si no hay. */
+    suspend fun safetySnapshotTime(): Long? = withContext(Dispatchers.IO) {
+        File(context.filesDir, SAFETY_SNAPSHOT_FILE).takeIf { it.exists() }?.lastModified()
+    }
+
+    /** Texto de la copia interna guardada antes de la ultima recuperacion; null si no hay. */
+    suspend fun readSafetySnapshot(): String? = withContext(Dispatchers.IO) {
+        File(context.filesDir, SAFETY_SNAPSHOT_FILE).takeIf { it.exists() }?.readText()
     }
 
     /**
@@ -1044,3 +1115,10 @@ data class RestoreSummary(
     val exportedAt: Long = 0L,
     val isHardcoreMode: Boolean = false
 )
+
+/** Texto que ve el usuario cuando el archivo elegido no es una copia de HabitFlow. */
+const val NOT_A_BACKUP_MESSAGE = "Este archivo no es una copia de HabitFlow"
+
+/** Copia interna de lo que habia antes de la ultima recuperacion. Vive en filesDir. */
+private const val SAFETY_SNAPSHOT_FILE = "copia_antes_de_recuperar.json"
+private const val SAFETY_SNAPSHOT_PENDING = "copia_antes_de_recuperar.tmp"

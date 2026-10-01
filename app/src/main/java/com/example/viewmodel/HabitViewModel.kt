@@ -2,6 +2,8 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.lifecycle.AndroidViewModel
@@ -12,6 +14,10 @@ import com.example.notification.NotificationHelper
 import com.example.repository.HabitRepository
 import com.example.service.TimerManager
 import com.example.util.AiProviderPreferences
+import com.example.util.BackupFileSharer
+import com.example.util.BackupPreferences
+import com.example.util.BackupStatus
+import com.example.util.BackupStatusCalculator
 import com.example.util.CalendarMonthCalculator
 import com.example.util.CalendarMonthSummary
 import com.example.util.DateUtils
@@ -19,10 +25,12 @@ import com.example.util.ProgressCalculator
 import com.example.util.ProgressSummary
 import com.example.util.ThemePreferences
 import com.example.widget.WidgetUpdater
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -157,9 +165,43 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         enabled && url.isNotBlank() && model.isNotBlank()
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    private val backupPrefs = BackupPreferences.getInstance(application)
+
+    /** Entradas del estado de la copia; se comparan para no recalcular en cada tic del temporizador. */
+    private data class BackupInputs(val today: LocalDate, val hasProgress: Boolean)
+
+    /** Estado de la copia de seguridad para Ajustes: color, titular y textos ya resueltos. */
+    val backupStatus: StateFlow<BackupStatus> = combine(
+        backupPrefs.lastBackupAt,
+        _uiState
+            .map { state -> BackupInputs(parseIsoDateOr(state.today, LocalDate.now()), state.allLogs.isNotEmpty()) }
+            .distinctUntilChanged()
+    ) { lastBackupAt, inputs ->
+        BackupStatusCalculator.compute(lastBackupAt, inputs.hasProgress, inputs.today)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        BackupStatusCalculator.compute(backupPrefs.lastBackupAt.value, false, LocalDate.now())
+    )
+
+    private val _backupBusy = MutableStateFlow(false)
+
+    /** true mientras se guarda o se exporta un archivo; Ajustes muestra un indicador y bloquea los botones. */
+    val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
+
+    private val _safetySnapshotAt = MutableStateFlow<Long?>(null)
+
+    /** Hora de la copia interna guardada antes de la ultima recuperacion; null si no hay nada que deshacer. */
+    val safetySnapshotAt: StateFlow<Long?> = _safetySnapshotAt.asStateFlow()
+
     init {
         val db = AppDatabase.getInstance(application)
         repository = HabitRepository(db, application)
+
+        // Copia interna previa a la ultima recuperacion: habilita "Deshacer" en Copias de seguridad
+        viewModelScope.launch {
+            _safetySnapshotAt.value = repository.safetySnapshotTime()
+        }
 
         // Observe Layout Mode
         viewModelScope.launch {
@@ -594,7 +636,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleHardcoreMode(enabled: Boolean) {
         viewModelScope.launch {
             repository.updateHardcoreMode(enabled)
-            val msg = if (enabled) "Modo Hardcore activado: ganas 25% más XP" else "Modo Hardcore desactivado"
+            val msg = if (enabled) "Modo difícil activado: ganas 25% más XP" else "Modo difícil desactivado"
             _uiState.update { it.copy(snackbarMessage = msg) }
         }
     }
@@ -722,50 +764,143 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun rescheduleAllReminders() {
         NotificationHelper.rescheduleAllReminders(getApplication<Application>())
-        _uiState.update { it.copy(snackbarMessage = "Recordatorios sincronizados correctamente") }
+        _uiState.update { it.copy(snackbarMessage = "Recordatorios reparados") }
     }
 
     fun dismissSnackbar() {
         _uiState.update { it.copy(snackbarMessage = null) }
     }
 
+    /** Muestra un aviso en la barra inferior. Ajustes lo usa para los resultados de copias y exportaciones. */
+    fun showMessage(message: String) {
+        _uiState.update { it.copy(snackbarMessage = message) }
+    }
+
+    /** Anota que el usuario acaba de guardar o enviar una copia. */
+    fun markBackupDone() {
+        backupPrefs.markBackupDone(System.currentTimeMillis())
+    }
+
     suspend fun getExportJson(): String = repository.exportDataJson()
     suspend fun getExportCsv(): String = repository.exportDataCsv()
+
+    /**
+     * Guarda una copia completa en el archivo que el usuario eligio con el selector de Android.
+     * Corre en viewModelScope: si el usuario cambia de pestana, la escritura no se corta a la mitad.
+     */
+    fun saveBackupTo(uri: Uri) {
+        viewModelScope.launch {
+            _backupBusy.value = true
+            try {
+                val json = repository.exportDataJson()
+                writeToUri(uri, json.toByteArray(Charsets.UTF_8))
+                backupPrefs.markBackupDone(System.currentTimeMillis())
+                showMessage("Copia guardada")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("No se pudo guardar la copia")
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    /** Exporta los registros a CSV. El BOM inicial hace que Excel lea bien los acentos. */
+    fun exportCsvTo(uri: Uri) {
+        viewModelScope.launch {
+            _backupBusy.value = true
+            try {
+                val csv = repository.exportDataCsv()
+                val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+                writeToUri(uri, bom + csv.toByteArray(Charsets.UTF_8))
+                showMessage("Registros exportados")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("No se pudieron exportar los registros")
+            } finally {
+                _backupBusy.value = false
+            }
+        }
+    }
+
+    private suspend fun writeToUri(uri: Uri, bytes: ByteArray) = withContext(Dispatchers.IO) {
+        val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+            ?: throw IllegalStateException("No se pudo abrir el archivo")
+        stream.use { it.write(bytes) }
+    }
+
+    /** Lee el texto de un archivo elegido con el selector de Android; null si no se pudo leer. */
+    suspend fun readTextFrom(uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
+                input.bufferedReader().readText()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Lo que hay ahora en el telefono, contado igual que una copia, para la tabla "Ahora -> Copia". */
+    suspend fun getCurrentDataSummary(): com.example.repository.RestoreSummary = repository.currentDataSummary()
+
+    /** Texto de la copia interna guardada antes de la ultima recuperacion; null si no hay. */
+    suspend fun readSafetySnapshot(): String? = repository.readSafetySnapshot()
+
+    /**
+     * Prepara la copia como archivo para "Enviar a otra app" y devuelve el menu de compartir de Android.
+     * Devuelve null si no se pudo preparar. Quien lo abre debe llamar a markBackupDone().
+     */
+    suspend fun prepareBackupShareIntent(): Intent? = try {
+        val json = repository.exportDataJson()
+        val app = getApplication<Application>()
+        val file = withContext(Dispatchers.IO) { BackupFileSharer.writeShareFile(app, json) }
+        BackupFileSharer.shareIntent(app, file)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 
     fun parseBackupPreview(jsonString: String): Result<com.example.repository.RestoreSummary> {
         return repository.parseBackupPreview(jsonString)
     }
 
+    /**
+     * Recupera una copia. Antes guarda lo que hay ahora en un archivo interno para poder deshacerlo;
+     * si eso falla, no toca la base de datos.
+     */
     fun restoreDatabaseFromJson(
         jsonString: String,
         onComplete: (Result<com.example.repository.RestoreSummary>) -> Unit = {}
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val result = repository.restoreDataJson(jsonString)
+            val result = repository.restoreWithSafetySnapshot(jsonString)
             _uiState.update { it.copy(isLoading = false) }
             result.onSuccess { summary ->
-                _uiState.update {
-                    it.copy(snackbarMessage = "Base de datos restaurada: ${summary.habitsCount} hábitos y ${summary.logsCount} check-ins cargados con éxito")
-                }
+                _safetySnapshotAt.value = repository.safetySnapshotTime()
+                val habits = if (summary.habitsCount == 1) "1 hábito" else "${summary.habitsCount} hábitos"
+                val logs = if (summary.logsCount == 1) "1 registro" else "${summary.logsCount} registros"
+                _uiState.update { it.copy(snackbarMessage = "Listo: recuperaste $habits y $logs") }
                 triggerHaptic(longArrayOf(0, 40, 60, 40))
             }.onFailure { error ->
+                // Solo se muestran los mensajes escritos para el usuario; los tecnicos se cambian por uno claro
+                val known = error.message?.takeIf {
+                    it == com.example.repository.NOT_A_BACKUP_MESSAGE || it.startsWith("No se pudo")
+                }
                 _uiState.update {
-                    it.copy(snackbarMessage = "Error al restaurar: ${error.localizedMessage ?: "Formato JSON inválido"}")
+                    it.copy(snackbarMessage = known ?: "No se pudo recuperar la copia. No se cambió nada.")
                 }
             }
             onComplete(result)
         }
     }
 
+    /** El cambio de tema ya se ve en pantalla, asi que no lleva aviso; solo vibracion. */
     fun setThemeMode(mode: ThemeMode) {
         themePrefs.setThemeMode(mode)
-        val msg = when (mode) {
-            ThemeMode.LIGHT -> "Modo Claro activado"
-            ThemeMode.DARK -> "Modo Oscuro activado"
-            ThemeMode.SYSTEM -> "Modo Sistema activado"
-        }
-        _uiState.update { it.copy(snackbarMessage = msg) }
         triggerHaptic()
     }
 
@@ -779,10 +914,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         setThemeMode(nextMode)
     }
 
+    /** Igual que el tema: el cambio se ve al momento, sin aviso. */
     fun setDynamicColor(enabled: Boolean) {
         themePrefs.setDynamicColor(enabled)
-        val msg = if (enabled) "Colores Dinámicos activados" else "Paleta estándar restaurada"
-        _uiState.update { it.copy(snackbarMessage = msg) }
         triggerHaptic()
     }
 

@@ -724,8 +724,8 @@ private fun XpRulesCard(isHardcore: Boolean, expanded: Boolean, onToggle: () -> 
         ),
         XpRule(
             Icons.Default.Bolt,
-            "Modo Hardcore",
-            if (isHardcore) "Activo: multiplica todo lo anterior. Se cambia en Ajustes." else "Multiplica todo lo anterior. Se activa en Ajustes.",
+            "Modo difícil",
+            if (isHardcore) "Activo: multiplica todo lo anterior. Se cambia en Ajustes > Motivación." else "Multiplica todo lo anterior. Se activa en Ajustes > Motivación.",
             "×1.25"
         )
     )

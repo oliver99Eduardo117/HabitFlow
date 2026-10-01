@@ -1,68 +1,86 @@
 package com.example.ui.components
 
+import android.app.AlarmManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.widget.Toast
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.model.ThemeMode
 import com.example.model.ViewLayoutMode
+import com.example.repository.NOT_A_BACKUP_MESSAGE
 import com.example.repository.RestoreSummary
-import com.example.ui.theme.Motion
-import com.example.util.DateUtils
+import com.example.util.BackupFileSharer
+import com.example.util.BackupStatus
 import com.example.viewmodel.HabitUiState
 import com.example.viewmodel.HabitViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.InputStream
-import java.text.SimpleDateFormat
-import java.util.*
+import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Si los avisos de los habitos pueden llegar, y a tiempo. */
+private enum class ReminderHealth {
+    OK,
+
+    /** Android tiene apagadas las notificaciones de la app. */
+    NOTIFICATIONS_OFF,
+
+    /** Android 12 o mas sin permiso de alarmas exactas: los avisos pueden llegar tarde. */
+    EXACT_ALARMS_OFF
+}
+
+/**
+ * Pestana Ajustes (Propuesta A, "lista con estado").
+ *
+ * Arriba va el estado de la copia de seguridad; abajo, grupos cortos con un color cada uno.
+ * "Copias de seguridad" abre su propia pantalla aqui mismo (atras regresa).
+ * El trabajo con archivos lo hace HabitViewModel; esta pantalla solo emite eventos.
+ */
 @Composable
 fun SettingsScreen(
     uiState: HabitUiState,
     viewModel: HabitViewModel,
-    onOpenThemeDialog: () -> Unit,
     onOpenAiSettings: () -> Unit,
     onOpenManageCategories: () -> Unit,
     onOpenArchivedHabits: () -> Unit,
@@ -71,1147 +89,631 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val backupStatus by viewModel.backupStatus.collectAsStateWithLifecycle()
+    val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
+    val safetySnapshotAt by viewModel.safetySnapshotAt.collectAsStateWithLifecycle()
+    val aiConfigured by viewModel.aiConfigured.collectAsStateWithLifecycle()
+
+    var showBackups by rememberSaveable { mutableStateOf(false) }
+    var showLayoutDialog by remember { mutableStateOf(false) }
+    var showPasteDialog by remember { mutableStateOf(false) }
+    var isSharing by remember { mutableStateOf(false) }
+
+    // Recuperacion en curso: texto de la copia, su resumen y lo que hay ahora en el telefono
     var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
     var pendingRestoreSummary by remember { mutableStateOf<RestoreSummary?>(null) }
-    var showManualJsonDialog by remember { mutableStateOf(false) }
-    var manualJsonText by remember { mutableStateOf("") }
-    var showSuccessToastMsg by remember { mutableStateOf<String?>(null) }
-    var isExporting by remember { mutableStateOf(false) }
+    var currentSummary by remember { mutableStateOf<RestoreSummary?>(null) }
+    var isRestoring by remember { mutableStateOf(false) }
 
-    // File Picker for Backup (Export JSON)
-    val createDocumentLauncher = rememberLauncherForActivityResult(
+    var reminderHealth by remember { mutableStateOf(readReminderHealth(context)) }
+
+    // La lista principal conserva su posicion al ir y volver de Copias de seguridad
+    val mainListState = rememberLazyListState()
+
+    // Al volver a la app (por ejemplo, desde los ajustes de Android) se revisan otra vez los avisos
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val before = reminderHealth
+                val now = readReminderHealth(context)
+                reminderHealth = now
+                // Las alarmas que ya estaban puestas siguen siendo inexactas: se vuelven a programar
+                if (before != ReminderHealth.OK && now == ReminderHealth.OK) {
+                    viewModel.rescheduleAllReminders()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    /** Revisa el texto de una copia y, si es valida, abre la confirmacion. */
+    fun reviewBackup(json: String) {
+        scope.launch {
+            val preview = withContext(Dispatchers.Default) { viewModel.parseBackupPreview(json) }
+            preview
+                .onSuccess { summary ->
+                    currentSummary = null
+                    pendingRestoreJson = json
+                    pendingRestoreSummary = summary
+                }
+                .onFailure { viewModel.showMessage(NOT_A_BACKUP_MESSAGE) }
+        }
+    }
+
+    val saveBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
-        if (uri != null) {
-            scope.launch {
-                try {
-                    isExporting = true
-                    val jsonContent = viewModel.getExportJson()
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        outputStream.write(jsonContent.toByteArray(Charsets.UTF_8))
-                        outputStream.flush()
-                    }
-                    showSuccessToastMsg = "Copia de seguridad guardada con éxito en el archivo seleccionado."
-                    Toast.makeText(context, "Copia de seguridad guardada", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Error al guardar archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                } finally {
-                    isExporting = false
-                }
-            }
-        }
+        if (uri != null) viewModel.saveBackupTo(uri)
     }
 
-    // Exportar registros a CSV (antes estaba en Progreso > Análisis). El BOM hace que Excel lea bien los acentos.
-    val createCsvLauncher = rememberLauncherForActivityResult(
+    val exportCsvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
     ) { uri: Uri? ->
-        if (uri != null) {
-            scope.launch {
-                try {
-                    isExporting = true
-                    val csvContent = viewModel.getExportCsv()
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        outputStream.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
-                        outputStream.write(csvContent.toByteArray(Charsets.UTF_8))
-                        outputStream.flush()
-                    }
-                    Toast.makeText(context, "Registros exportados a CSV", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Error al guardar archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                } finally {
-                    isExporting = false
-                }
-            }
-        }
+        if (uri != null) viewModel.exportCsvTo(uri)
     }
 
-    // File Picker for Restore (Import JSON)
-    val openDocumentLauncher = rememberLauncherForActivityResult(
+    val openBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                try {
-                    val jsonContent = context.contentResolver.openInputStream(uri)?.use { inputStream: InputStream ->
-                        inputStream.bufferedReader().use { it.readText() }
-                    }
-
-                    if (!jsonContent.isNullOrBlank()) {
-                        val previewResult = viewModel.parseBackupPreview(jsonContent)
-                        previewResult.onSuccess { summary ->
-                            pendingRestoreJson = jsonContent
-                            pendingRestoreSummary = summary
-                        }.onFailure { error ->
-                            Toast.makeText(
-                                context,
-                                "Archivo no válido: ${error.localizedMessage ?: "Formato JSON incompatible"}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    } else {
-                        Toast.makeText(context, "El archivo seleccionado está vacío", Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Error al leer archivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                val json = viewModel.readTextFrom(uri)
+                if (json.isNullOrBlank()) {
+                    viewModel.showMessage("No se pudo leer el archivo")
+                } else {
+                    reviewBackup(json)
                 }
             }
         }
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("settings_screen"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 1. Header Section
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Ajustes & Copias de Seguridad",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "Preserva tu historial y personaliza el funcionamiento de HabitFlow.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // 2. BACKUP & RESTORE HERO CARD (Primary Feature)
-        item {
-            BackupAndRestoreCard(
-                uiState = uiState,
-                isExporting = isExporting,
-                onBackupClick = {
-                    val defaultFileName = "habitflow_backup_${DateUtils.getTodayDateString().replace("-", "")}.json"
-                    createDocumentLauncher.launch(defaultFileName)
-                },
-                onRestoreClick = {
-                    openDocumentLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
-                },
-                onShareBackup = {
-                    scope.launch {
-                        try {
-                            val jsonContent = viewModel.getExportJson()
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "Copia de Seguridad HabitFlow")
-                                putExtra(Intent.EXTRA_TEXT, jsonContent)
-                            }
-                            context.startActivity(Intent.createChooser(sendIntent, "Compartir Copia JSON"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                onCopyJson = {
-                    scope.launch {
-                        try {
-                            val jsonContent = viewModel.getExportJson()
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("HabitFlow Backup", jsonContent)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "JSON copiado al portapapeles", Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                onOpenManualRestore = {
-                    manualJsonText = ""
-                    showManualJsonDialog = true
-                }
-            )
-        }
-
-        // 3. Database Statistics Card
-        item {
-            LocalDatabaseStatsCard(uiState = uiState)
-        }
-
-        // 4. Appearance & Themes Section
-        item {
-            AppearanceSettingsCard(
-                themeMode = uiState.themeMode,
-                dynamicColor = uiState.dynamicColor,
-                layoutMode = uiState.layoutMode,
-                onSelectThemeMode = { viewModel.setThemeMode(it) },
-                onToggleDynamicColor = { viewModel.setDynamicColor(it) },
-                onSelectLayoutMode = { viewModel.setLayoutMode(it) },
-                onOpenVisualCustomization = onOpenThemeDialog
-            )
-        }
-
-        // 5. System Management & Tools
-        item {
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                border = CardDefaults.outlinedCardBorder(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "GESTIÓN & HERRAMIENTAS",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    SettingsActionRow(
-                        title = "Gestión de Categorías",
-                        subtitle = "${uiState.categories.size} categorías configuradas",
-                        icon = Icons.Default.Category,
-                        testTag = "settings_manage_categories",
-                        onClick = onOpenManageCategories
-                    )
-
-                    SettingsActionRow(
-                        title = "Hábitos Archivados",
-                        subtitle = "${uiState.archivedHabits.size} hábitos en pausa",
-                        icon = Icons.Default.Archive,
-                        testTag = "settings_archived_habits",
-                        onClick = onOpenArchivedHabits
-                    )
-
-                    SettingsActionRow(
-                        title = "Exportar registros a CSV",
-                        subtitle = "Todos tus registros, para Excel o Google Sheets",
-                        icon = Icons.Default.TableChart,
-                        testTag = "settings_export_csv",
-                        onClick = {
-                            if (!isExporting) {
-                                val fileName = "habitflow_registros_${DateUtils.getTodayDateString().replace("-", "")}.csv"
-                                createCsvLauncher.launch(fileName)
-                            }
-                        }
-                    )
-
-                    SettingsSwitchRow(
-                        title = "Modo Hardcore",
-                        subtitle = "Ganas 25% más XP en todo. No cambia rachas ni metas.",
-                        icon = Icons.Default.Bolt,
-                        checked = uiState.userStats.isHardcoreMode,
-                        testTag = "settings_hardcore_mode",
-                        onCheckedChange = { viewModel.toggleHardcoreMode(it) }
-                    )
-
-                    SettingsActionRow(
-                        title = "Proveedor de Inteligencia Artificial",
-                        subtitle = "Gemini API, OpenAI o IA local",
-                        icon = Icons.Default.SmartToy,
-                        testTag = "settings_ai_config",
-                        onClick = onOpenAiSettings
-                    )
-
-                    SettingsActionRow(
-                        title = "Resincronizar Recordatorios",
-                        subtitle = "Reconstruir todas las alarmas de hábitos",
-                        icon = Icons.Default.NotificationsActive,
-                        testTag = "settings_resync_reminders",
-                        onClick = { viewModel.rescheduleAllReminders() }
-                    )
-                }
-            }
-        }
-
-        // 6. Offline-First Privacy Guarantee Footer
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(
-                            text = "Privacidad 100% Local (Room Database)",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Tus datos viven únicamente en este dispositivo en SQLite. Usa los botones de Backup y Restore para crear copias independientes.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // RESTORE CONFIRMATION DIALOG
-    if (pendingRestoreJson != null && pendingRestoreSummary != null) {
-        val summary = pendingRestoreSummary!!
-        val jsonToRestore = pendingRestoreJson!!
-
-        RestoreConfirmationDialog(
-            summary = summary,
-            onDismiss = {
+    // Lo que hay ahora en el telefono, para la tabla "Ahora -> Copia"
+    LaunchedEffect(pendingRestoreSummary) {
+        if (pendingRestoreSummary != null && currentSummary == null) {
+            try {
+                currentSummary = viewModel.getCurrentDataSummary()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                viewModel.showMessage("No se pudo leer lo que hay ahora en el teléfono")
                 pendingRestoreJson = null
                 pendingRestoreSummary = null
+            }
+        }
+    }
+
+    val onSaveToDevice: () -> Unit = {
+        if (!backupBusy) saveBackupLauncher.launch(BackupFileSharer.backupFileName())
+    }
+
+    val onShare: () -> Unit = {
+        if (!isSharing) {
+            isSharing = true
+            scope.launch {
+                val chooser = viewModel.prepareBackupShareIntent()
+                isSharing = false
+                if (chooser == null) {
+                    viewModel.showMessage("No se pudo preparar la copia para enviarla")
+                } else {
+                    try {
+                        context.startActivity(chooser)
+                        // Android no avisa si el envio se cancela: se cuenta al abrir el menu de compartir
+                        viewModel.markBackupDone()
+                    } catch (e: Exception) {
+                        viewModel.showMessage("No hay apps para enviar la copia")
+                    }
+                }
+            }
+        }
+    }
+
+    val onCopyAsText: () -> Unit = {
+        scope.launch {
+            try {
+                val json = viewModel.getExportJson()
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Copia de HabitFlow", json))
+                // Android 13 o mas ya muestra su propio aviso al copiar
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                    viewModel.showMessage("Texto de la copia en el portapapeles")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                viewModel.showMessage("La copia es muy grande para copiarla como texto. Usa Guardar copia.")
+            }
+        }
+    }
+
+    val onUndoLastRestore: () -> Unit = {
+        scope.launch {
+            val json = viewModel.readSafetySnapshot()
+            if (json == null) {
+                viewModel.showMessage("No hay nada que deshacer")
+            } else {
+                reviewBackup(json)
+            }
+        }
+    }
+
+    BackHandler(enabled = showBackups) { showBackups = false }
+
+    AnimatedContent(
+        targetState = showBackups,
+        transitionSpec = {
+            // Misma transicion que las pestanas de Progreso: entra desde la derecha al abrir Copias
+            val forward = targetState
+            (slideInHorizontally(
+                animationSpec = tween(durationMillis = 280),
+                initialOffsetX = { fullWidth -> if (forward) fullWidth / 4 else -fullWidth / 4 }
+            ) + fadeIn(animationSpec = tween(280)))
+                .togetherWith(
+                    slideOutHorizontally(
+                        animationSpec = tween(durationMillis = 250),
+                        targetOffsetX = { fullWidth -> if (forward) -fullWidth / 4 else fullWidth / 4 }
+                    ) + fadeOut(animationSpec = tween(200))
+                )
+        },
+        label = "settings_page_transition",
+        modifier = modifier.fillMaxSize()
+    ) { backups ->
+        if (backups) {
+            BackupSettingsScreen(
+                status = backupStatus,
+                safetySnapshotAt = safetySnapshotAt,
+                isBusy = backupBusy || isSharing,
+                onBack = { showBackups = false },
+                onSaveToDevice = onSaveToDevice,
+                onShare = onShare,
+                onRestoreFromFile = { openBackupLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                onUndoLastRestore = onUndoLastRestore,
+                onCopyAsText = onCopyAsText,
+                onPasteText = { showPasteDialog = true }
+            )
+        } else {
+            SettingsMainPage(
+                uiState = uiState,
+                listState = mainListState,
+                backupStatus = backupStatus,
+                backupBusy = backupBusy,
+                aiConfigured = aiConfigured,
+                reminderHealth = reminderHealth,
+                onCreateBackup = onSaveToDevice,
+                onOpenBackups = { showBackups = true },
+                onSelectTheme = { mode -> viewModel.setThemeMode(mode) },
+                onToggleDynamicColor = { enabled -> viewModel.setDynamicColor(enabled) },
+                onOpenLayoutPicker = { showLayoutDialog = true },
+                onOpenManageCategories = onOpenManageCategories,
+                onOpenArchivedHabits = onOpenArchivedHabits,
+                onOpenReminderSettings = { openReminderSettings(context, reminderHealth) },
+                onRepairReminders = { viewModel.rescheduleAllReminders() },
+                onToggleHardcore = { enabled -> viewModel.toggleHardcoreMode(enabled) },
+                onOpenAiSettings = onOpenAiSettings,
+                onExportCsv = {
+                    if (!backupBusy) exportCsvLauncher.launch(BackupFileSharer.csvFileName())
+                }
+            )
+        }
+    }
+
+    if (showLayoutDialog) {
+        LayoutModeDialog(
+            current = uiState.layoutMode,
+            onSelect = { mode ->
+                viewModel.setLayoutMode(mode)
+                showLayoutDialog = false
             },
-            onConfirmRestore = {
-                viewModel.restoreDatabaseFromJson(jsonToRestore) {
+            onDismiss = { showLayoutDialog = false }
+        )
+    }
+
+    if (showPasteDialog) {
+        BackupPasteDialog(
+            onDismiss = { showPasteDialog = false },
+            onContinue = { text ->
+                showPasteDialog = false
+                reviewBackup(text)
+            }
+        )
+    }
+
+    val restoreJson = pendingRestoreJson
+    val restoreSummary = pendingRestoreSummary
+    if (restoreJson != null && restoreSummary != null) {
+        RestoreConfirmSheet(
+            incoming = restoreSummary,
+            current = currentSummary,
+            isRestoring = isRestoring,
+            onConfirm = {
+                isRestoring = true
+                viewModel.restoreDatabaseFromJson(restoreJson) {
+                    isRestoring = false
                     pendingRestoreJson = null
                     pendingRestoreSummary = null
+                    currentSummary = null
                 }
-            }
-        )
-    }
-
-    // MANUAL JSON PASTE RESTORE DIALOG
-    if (showManualJsonDialog) {
-        ManualJsonPasteDialog(
-            initialText = manualJsonText,
-            onDismiss = { showManualJsonDialog = false },
-            onValidateAndRestore = { rawJson ->
-                showManualJsonDialog = false
-                val preview = viewModel.parseBackupPreview(rawJson)
-                preview.onSuccess { summary ->
-                    pendingRestoreJson = rawJson
-                    pendingRestoreSummary = summary
-                }.onFailure { err ->
-                    Toast.makeText(
-                        context,
-                        "Error de formato JSON: ${err.localizedMessage}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+            },
+            onDismiss = {
+                // Si ya empezo, la recuperacion sigue en el ViewModel; el aviso dira como termino
+                pendingRestoreJson = null
+                pendingRestoreSummary = null
+                currentSummary = null
             }
         )
     }
 }
 
-/**
- * High-visibility Backup & Restore Card with primary interactive triggers.
- */
 @Composable
-private fun BackupAndRestoreCard(
+private fun SettingsMainPage(
     uiState: HabitUiState,
-    isExporting: Boolean,
-    onBackupClick: () -> Unit,
-    onRestoreClick: () -> Unit,
-    onShareBackup: () -> Unit,
-    onCopyJson: () -> Unit,
-    onOpenManualRestore: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("backup_restore_card")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Card Title Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF6366F1), Color(0xFF06B6D4))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudSync,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(
-                            text = "Copias de Seguridad (JSON)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Exporta o restaura tu base de datos completa",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = "Guarda todos tus hábitos, registros diarios, rachas, categorías y XP acumulado en un archivo estándar JSON. Puedes restaurarlo en cualquier momento sin depender de servidores externos.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                lineHeight = 20.sp
-            )
-
-            // Primary Action Buttons (Backup & Restore)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // BACKUP BUTTON
-                Button(
-                    onClick = onBackupClick,
-                    enabled = !isExporting,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF6366F1),
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .testTag("backup_button")
-                ) {
-                    if (isExporting) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.SaveAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Backup",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                    }
-                }
-
-                // RESTORE BUTTON
-                FilledTonalButton(
-                    onClick = onRestoreClick,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .testTag("restore_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Restore,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Restore",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
-
-            // Secondary Quick Actions (Share, Copy, Manual Paste)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = onShareBackup,
-                    modifier = Modifier.testTag("share_backup_button")
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Compartir JSON", style = MaterialTheme.typography.labelMedium)
-                }
-
-                TextButton(
-                    onClick = onCopyJson,
-                    modifier = Modifier.testTag("copy_json_button")
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Copiar texto", style = MaterialTheme.typography.labelMedium)
-                }
-
-                TextButton(
-                    onClick = onOpenManualRestore,
-                    modifier = Modifier.testTag("manual_paste_restore_button")
-                ) {
-                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Pegar JSON", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Displays live counts of Room database entities.
- */
-@Composable
-private fun LocalDatabaseStatsCard(uiState: HabitUiState) {
-    val totalCheckIns by animateIntAsState(
-        targetValue = uiState.allLogs.size,
-        animationSpec = Motion.springValues(),
-        label = "totalCheckIns"
-    )
-    val totalHabits by animateIntAsState(
-        targetValue = uiState.habits.size,
-        animationSpec = Motion.springValues(),
-        label = "totalHabits"
-    )
-
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "ESTADO DE LA BASE DE DATOS LOCAL",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF10B981).copy(alpha = 0.15f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF10B981))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "SQLite v3 Activo",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF10B981)
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatCounterPill(
-                    label = "Hábitos Activos",
-                    value = "$totalHabits",
-                    icon = Icons.Default.CheckCircle,
-                    tint = Color(0xFF6366F1),
-                    modifier = Modifier.weight(1f)
-                )
-
-                StatCounterPill(
-                    label = "Check-ins Registrados",
-                    value = "$totalCheckIns",
-                    icon = Icons.Default.History,
-                    tint = Color(0xFF06B6D4),
-                    modifier = Modifier.weight(1f)
-                )
-
-                StatCounterPill(
-                    label = "Nivel / XP",
-                    value = "Lv.${uiState.userStats.level}",
-                    icon = Icons.Default.EmojiEvents,
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatCounterPill(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 10.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/**
- * Appearance settings card (Theme, Dynamic Colors, Default Layout).
- */
-@Composable
-private fun AppearanceSettingsCard(
-    themeMode: ThemeMode,
-    dynamicColor: Boolean,
-    layoutMode: ViewLayoutMode,
-    onSelectThemeMode: (ThemeMode) -> Unit,
+    listState: LazyListState,
+    backupStatus: BackupStatus,
+    backupBusy: Boolean,
+    aiConfigured: Boolean,
+    reminderHealth: ReminderHealth,
+    onCreateBackup: () -> Unit,
+    onOpenBackups: () -> Unit,
+    onSelectTheme: (ThemeMode) -> Unit,
     onToggleDynamicColor: (Boolean) -> Unit,
-    onSelectLayoutMode: (ViewLayoutMode) -> Unit,
-    onOpenVisualCustomization: () -> Unit
+    onOpenLayoutPicker: () -> Unit,
+    onOpenManageCategories: () -> Unit,
+    onOpenArchivedHabits: () -> Unit,
+    onOpenReminderSettings: () -> Unit,
+    onRepairReminders: () -> Unit,
+    onToggleHardcore: (Boolean) -> Unit,
+    onOpenAiSettings: () -> Unit,
+    onExportCsv: () -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-        border = CardDefaults.outlinedCardBorder(),
-        modifier = Modifier.fillMaxWidth()
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("settings_screen"),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "APARIENCIA Y TEMA",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+        item(key = "title") {
+            Text(
+                text = "Ajustes",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
+        item(key = "backup_status") {
+            BackupStatusCard(
+                status = backupStatus,
+                isBusy = backupBusy,
+                onCreateBackup = onCreateBackup,
+                onOpenBackups = onOpenBackups
+            )
+        }
+
+        item(key = "appearance") {
+            SettingsSection(title = "Apariencia") {
+                SettingsRow(
+                    icon = Icons.Default.Palette,
+                    tint = SettingsTint.Appearance,
+                    title = "Tema",
+                    subtitle = "Auto sigue el modo de tu teléfono"
                 )
-
-                IconButton(
-                    onClick = onOpenVisualCustomization,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = "Personalizar",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            // Theme Mode Selector Chips
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ThemeChip(
-                    label = "Claro",
-                    icon = Icons.Default.LightMode,
-                    isSelected = themeMode == ThemeMode.LIGHT,
-                    onClick = { onSelectThemeMode(ThemeMode.LIGHT) },
-                    modifier = Modifier.weight(1f)
-                )
-
-                ThemeChip(
-                    label = "Oscuro",
-                    icon = Icons.Default.DarkMode,
-                    isSelected = themeMode == ThemeMode.DARK,
-                    onClick = { onSelectThemeMode(ThemeMode.DARK) },
-                    modifier = Modifier.weight(1f)
-                )
-
-                ThemeChip(
-                    label = "Sistema",
-                    icon = Icons.Default.BrightnessAuto,
-                    isSelected = themeMode == ThemeMode.SYSTEM,
-                    onClick = { onSelectThemeMode(ThemeMode.SYSTEM) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Material You Switch (Android 12+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.ColorLens,
-                            contentDescription = null,
-                            tint = Color(0xFFEC4899),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Colores Dinámicos (Material You)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Extraer tonalidades del fondo de pantalla",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Switch(
-                        checked = dynamicColor,
+                ThemeModeSelector(current = uiState.themeMode, onSelect = onSelectTheme)
+                // Colores del fondo de pantalla (Material You) solo existen desde Android 12
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Wallpaper,
+                        tint = SettingsTint.Appearance,
+                        title = "Colores de tu fondo",
+                        subtitle = "La app toma los tonos de tu fondo de pantalla",
+                        checked = uiState.dynamicColor,
                         onCheckedChange = onToggleDynamicColor,
                         modifier = Modifier.testTag("settings_dynamic_color_switch")
                     )
                 }
+                SettingsDivider()
+                SettingsRow(
+                    icon = layoutIcon(uiState.layoutMode),
+                    tint = SettingsTint.Appearance,
+                    title = "Vista de Hoy",
+                    subtitle = "Cómo se acomodan tus hábitos",
+                    onClick = onOpenLayoutPicker,
+                    modifier = Modifier.testTag("settings_layout_mode")
+                ) {
+                    SettingsValue(value = layoutShortLabel(uiState.layoutMode))
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun ThemeChip(
-    label: String,
-    icon: ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        border = if (isSelected) null else CardDefaults.outlinedCardBorder(),
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-            )
+        item(key = "habits") {
+            SettingsSection(title = "Hábitos") {
+                SettingsRow(
+                    icon = Icons.Default.Category,
+                    tint = SettingsTint.Habits,
+                    title = "Categorías",
+                    subtitle = "Agrupa tus hábitos por tema",
+                    onClick = onOpenManageCategories,
+                    modifier = Modifier.testTag("settings_manage_categories")
+                ) {
+                    SettingsValue(value = uiState.categories.size.toString())
+                }
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Default.Inventory2,
+                    tint = SettingsTint.Habits,
+                    title = "Hábitos archivados",
+                    subtitle = "En pausa, sin perder su historial",
+                    onClick = onOpenArchivedHabits,
+                    modifier = Modifier.testTag("settings_archived_habits")
+                ) {
+                    SettingsValue(value = uiState.archivedHabits.size.toString())
+                }
+            }
         }
-    }
-}
 
-@Composable
-private fun SettingsActionRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    testTag: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = Color.Transparent,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .testTag(testTag)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        item(key = "reminders") {
+            val (pillText, pillTone, subtitle) = when (reminderHealth) {
+                ReminderHealth.OK -> Triple("Activos", SettingsTone.GOOD, "Te avisamos a la hora de cada hábito")
+                ReminderHealth.NOTIFICATIONS_OFF -> Triple("Apagados", SettingsTone.DANGER, "Toca para activarlos en Android")
+                ReminderHealth.EXACT_ALARMS_OFF -> Triple("Con retraso", SettingsTone.WARNING, "Toca para que lleguen a la hora exacta")
+            }
+            SettingsSection(title = "Recordatorios") {
+                SettingsRow(
+                    icon = if (reminderHealth == ReminderHealth.NOTIFICATIONS_OFF) {
+                        Icons.Default.NotificationsOff
+                    } else {
+                        Icons.Default.Notifications
+                    },
+                    tint = SettingsTint.Reminders,
+                    title = "Avisos",
+                    subtitle = subtitle,
+                    onClick = onOpenReminderSettings,
+                    modifier = Modifier.testTag("settings_notifications")
+                ) {
+                    SettingsStatusPill(text = pillText, tone = pillTone)
+                }
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Default.Build,
+                    tint = SettingsTint.Reminders,
+                    title = "Reparar recordatorios",
+                    subtitle = "Úsalo si un aviso no llegó",
+                    onClick = onRepairReminders,
+                    modifier = Modifier.testTag("settings_resync_reminders")
+                ) {
+                    SettingsValue(value = null)
+                }
+            }
+        }
+
+        item(key = "motivation") {
+            SettingsSection(title = "Motivación") {
+                SettingsSwitchRow(
+                    icon = Icons.Default.Bolt,
+                    tint = SettingsTint.Motivation,
+                    title = "Modo difícil",
+                    subtitle = "Ganas 25% más XP. Tus rachas y metas no cambian.",
+                    checked = uiState.userStats.isHardcoreMode,
+                    onCheckedChange = onToggleHardcore,
+                    modifier = Modifier.testTag("settings_hardcore_mode")
+                )
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Default.AutoAwesome,
+                    tint = SettingsTint.Assistant,
+                    title = "Asistente con IA",
+                    subtitle = "Consejos sobre tu progreso",
+                    onClick = onOpenAiSettings,
+                    modifier = Modifier.testTag("settings_ai_config")
+                ) {
+                    SettingsValue(value = if (aiConfigured) "Activo" else "Apagado")
+                }
+            }
+        }
+
+        item(key = "data") {
+            SettingsSection(title = "Tus datos") {
+                SettingsRow(
+                    icon = Icons.Default.Backup,
+                    tint = SettingsTint.Data,
+                    title = "Copias de seguridad",
+                    subtitle = "Guardar y recuperar todo",
+                    onClick = onOpenBackups,
+                    modifier = Modifier.testTag("settings_backups")
+                ) {
+                    SettingsValue(value = backupStatus.shortLabel)
+                }
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Default.TableChart,
+                    tint = SettingsTint.Data,
+                    title = "Exportar a Excel",
+                    subtitle = "Tus registros en una hoja de cálculo",
+                    onClick = onExportCsv,
+                    modifier = Modifier.testTag("settings_export_csv")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SaveAlt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        item(key = "footer") {
+            Column(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
-                    imageVector = icon,
+                    imageVector = Icons.Default.Lock,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
                 )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = "Sin cuentas. Tus hábitos se guardan en este teléfono.",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
                 Text(
-                    text = subtitle,
+                    text = "HabitFlow · versión ${BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(18.dp)
-            )
         }
     }
 }
 
-/** Fila de ajuste con interruptor. Toda la fila responde al toque, no solo el switch. */
+/** Claro / Oscuro / Auto. El elegido muestra una palomita en lugar de su icono. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsSwitchRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    checked: Boolean,
-    testTag: String,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
+private fun ThemeModeSelector(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    val options = listOf(
+        Triple(ThemeMode.LIGHT, "Claro", Icons.Default.LightMode),
+        Triple(ThemeMode.DARK, "Oscuro", Icons.Default.DarkMode),
+        Triple(ThemeMode.SYSTEM, "Auto", Icons.Default.BrightnessAuto)
+    )
+    SingleChoiceSegmentedButtonRow(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onCheckedChange(!checked) }
-            .testTag(testTag)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
+        options.forEachIndexed { index, (mode, label, icon) ->
+            val selected = mode == current
+            SegmentedButton(
+                selected = selected,
+                onClick = { if (!selected) onSelect(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                icon = {
+                    Icon(
+                        imageVector = if (selected) Icons.Default.Check else icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                modifier = Modifier.testTag("settings_theme_${mode.name.lowercase()}")
+            ) {
+                Text(text = label, maxLines = 1)
+            }
         }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
-/**
- * Confirmation dialog before overwriting the Room database with a restored JSON backup.
- */
-@Composable
-private fun RestoreConfirmationDialog(
-    summary: RestoreSummary,
-    onDismiss: () -> Unit,
-    onConfirmRestore: () -> Unit
-) {
-    val formattedDate = remember(summary.exportedAt) {
-        if (summary.exportedAt > 0) {
-            val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-            sdf.format(Date(summary.exportedAt))
-        } else "Fecha no especificada"
-    }
+private fun layoutShortLabel(mode: ViewLayoutMode): String = when (mode) {
+    ViewLayoutMode.LIST -> "Lista"
+    ViewLayoutMode.HEATMAP -> "Mapa de calor"
+    ViewLayoutMode.KANBAN -> "Tablero"
+    ViewLayoutMode.TIMELINE -> "Línea de tiempo"
+}
 
+/** Los mismos iconos que el menu de vistas de la pestana Hoy. */
+private fun layoutIcon(mode: ViewLayoutMode): ImageVector = when (mode) {
+    ViewLayoutMode.LIST -> Icons.Default.ViewList
+    ViewLayoutMode.HEATMAP -> Icons.Default.GridOn
+    ViewLayoutMode.KANBAN -> Icons.Default.ViewKanban
+    ViewLayoutMode.TIMELINE -> Icons.Default.Timeline
+}
+
+/** Elegir como se ve la pestana Hoy. Al tocar una opcion se aplica y se cierra. */
+@Composable
+private fun LayoutModeDialog(
+    current: ViewLayoutMode,
+    onSelect: (ViewLayoutMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = listOf(
+        Triple(ViewLayoutMode.LIST, "Lista", "Tus hábitos del día, uno debajo de otro"),
+        Triple(ViewLayoutMode.HEATMAP, "Mapa de calor", "El historial de cada hábito en cuadritos"),
+        Triple(ViewLayoutMode.KANBAN, "Tablero Kanban", "Columnas: por hacer, en curso y hechos"),
+        Triple(ViewLayoutMode.TIMELINE, "Línea de tiempo", "Por hora del recordatorio: mañana, tarde y noche")
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        title = {
-            Text(
-                text = "Restaurar Copia de Seguridad",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-        },
+        title = { Text(text = "Vista de Hoy") },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Se ha validado el archivo de copia de seguridad con la siguiente información:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = CardDefaults.outlinedCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+            Column(modifier = Modifier.selectableGroup()) {
+                options.forEach { (mode, title, description) ->
+                    val selected = mode == current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(mode) })
+                            .heightIn(min = 64.dp)
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                            .testTag("layout_option_${mode.name.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        RestoreSummaryItem("Hábitos:", "${summary.habitsCount} hábitos")
-                        RestoreSummaryItem("Registros históricos:", "${summary.logsCount} check-ins")
-                        RestoreSummaryItem("Subtareas:", "${summary.subTasksCount} subtareas")
-                        RestoreSummaryItem("Categorías:", "${summary.categoriesCount} categorías")
-                        RestoreSummaryItem("Nivel / XP:", "Lv.${summary.userLevel} (${summary.userXp} XP)")
-                        RestoreSummaryItem("Fecha del respaldo:", formattedDate)
+                        RadioButton(selected = selected, onClick = null)
+                        Icon(
+                            imageVector = layoutIcon(mode),
+                            contentDescription = null,
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-
-                Text(
-                    text = "ADVERTENCIA: Esta acción reemplazará la base de datos local actual con los datos del respaldo seleccionado.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
             }
         },
         confirmButton = {
-            Button(
-                onClick = onConfirmRestore,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.testTag("confirm_restore_dialog_button")
-            ) {
-                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Confirmar y Restaurar", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Cancelar")
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cerrar")
             }
         }
     )
 }
 
-@Composable
-private fun RestoreSummaryItem(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+/** Lee si Android deja que los avisos lleguen, y si llegan a la hora exacta. */
+private fun readReminderHealth(context: Context): ReminderHealth {
+    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+        return ReminderHealth.NOTIFICATIONS_OFF
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        if (alarmManager != null && !alarmManager.canScheduleExactAlarms()) {
+            return ReminderHealth.EXACT_ALARMS_OFF
+        }
+    }
+    return ReminderHealth.OK
 }
 
-/**
- * Modal dialog for pasting raw JSON backup text manually.
- */
-@Composable
-private fun ManualJsonPasteDialog(
-    initialText: String,
-    onDismiss: () -> Unit,
-    onValidateAndRestore: (String) -> Unit
-) {
-    var text by remember { mutableStateOf(initialText) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    text = "Pegar Copia JSON",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = "Pega aquí el contenido de un archivo de copia de seguridad JSON generado previamente por HabitFlow:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .testTag("manual_json_text_input"),
-                    placeholder = { Text("{\n  \"appName\": \"HabitFlow\",\n  \"habits\": [...]\n}") },
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancelar")
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Button(
-                        onClick = {
-                            if (text.isNotBlank()) {
-                                onValidateAndRestore(text.trim())
-                            }
-                        },
-                        enabled = text.isNotBlank(),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("validate_manual_json_button")
-                    ) {
-                        Text("Validar y Continuar")
-                    }
-                }
-            }
-        }
+/** Abre la pantalla de Android que arregla el problema: alarmas exactas o notificaciones de la app. */
+private fun openReminderSettings(context: Context, health: ReminderHealth) {
+    val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+    val intent = when {
+        health == ReminderHealth.EXACT_ALARMS_OFF && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        else -> appDetails
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        runCatching { context.startActivity(appDetails) }
     }
 }
